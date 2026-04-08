@@ -1,0 +1,562 @@
+/* Kid-friendly tutor UI — large tap targets, high contrast, soft palette */
+
+:root {
+  --kt-bg: #e8f4fc;
+  --kt-bg-deep: #c9e8f7;
+  --kt-card: #ffffff;
+  --kt-ink: #1a2f45;
+  --kt-muted: #5a7189;
+  --kt-accent: #ff8b5c;
+  --kt-accent-dark: #e86a3a;
+  --kt-lime: #7dd87d;
+  --kt-lilac: #c4a8ff;
+  --kt-radius: 1.25rem;
+  --kt-shadow: 0 8px 28px rgba(26, 47, 69, 0.12);
+  font-size: 18px;
+}
+
+.kid-app {
+  min-height: 100vh;
+  background: linear-gradient(165deg, var(--kt-bg) 0%, #fff5eb 48%, var(--kt-bg-deep) 100%);
+  color: var(--kt-ink);
+  font-family: "Fredoka", "Segoe UI", system-ui, sans-serif;
+  padding: clamp(1rem, 4vw, 2rem);
+  box-sizing: border-box;
+}
+
+.kid-app *,
+.kid-app *::before,
+.kid-app *::after {
+  box-sizing: border-box;
+}
+
+.kid-shell {
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.kid-brand {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.kid-brand h1 {
+  font-size: clamp(1.75rem, 5vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+  color: var(--kt-ink);
+}
+
+.kid-brand p {
+  margin: 0;
+  color: var(--kt-muted);
+  font-size: 1.05rem;
+}
+
+.kid-card {
+  background: var(--kt-card);
+  border-radius: var(--kt-radius);
+  box-shadow: var(--kt-shadow);
+  padding: clamp(1.25rem, 4vw, 2rem);
+  margin-bottom: 1.25rem;
+}
+
+.kid-card h2 {
+  margin: 0 0 1rem;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.kid-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.kid-input {
+  width: 100%;
+  font-size: 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  border: 3px solid var(--kt-bg-deep);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.kid-input:focus {
+  border-color: var(--kt-lilac);
+}
+
+.kid-btn {
+  font-family: inherit;
+  font-size: 1.15rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 999px;
+  padding: 0.85rem 1.5rem;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.kid-btn:active {
+  transform: scale(0.98);
+}
+
+.kid-btn-primary {
+  background: linear-gradient(180deg, var(--kt-accent) 0%, var(--kt-accent-dark) 100%);
+  color: #fff;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.12);
+}
+
+.kid-btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.kid-btn-secondary {
+  background: var(--kt-lime);
+  color: #1a3d1f;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.08);
+}
+
+.kid-btn-ghost {
+  background: transparent;
+  color: var(--kt-muted);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  box-shadow: none;
+}
+
+.kid-btn-xl {
+  font-size: 1.35rem;
+  padding: 1.1rem 2rem;
+  width: 100%;
+  max-width: 22rem;
+  margin: 0.5rem auto;
+  display: flex;
+}
+
+.kid-btn-small {
+  font-size: 0.95rem;
+  padding: 0.5rem 1rem;
+}
+
+.kid-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.kid-avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.kid-avatar-tile {
+  border: 4px solid transparent;
+  border-radius: var(--kt-radius);
+  padding: 1rem 0.75rem;
+  background: var(--kt-bg);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.kid-avatar-tile:hover {
+  transform: translateY(-2px);
+}
+
+.kid-avatar-tile.selected {
+  border-color: var(--kt-lilac);
+  background: #fff;
+}
+
+.kid-avatar-tile.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.kid-avatar-emoji {
+  font-size: 3rem;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+}
+
+.kid-avatar-name {
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+
+.kid-avatar-note {
+  font-size: 0.8rem;
+  color: var(--kt-muted);
+  margin-top: 0.25rem;
+}
+
+.kid-welcome-banner {
+  text-align: center;
+  padding: 1rem;
+  background: linear-gradient(90deg, #fff6 0%, #fff 50%, #fff6 100%);
+  border-radius: var(--kt-radius);
+  margin-bottom: 1.25rem;
+}
+
+.kid-welcome-banner strong {
+  color: var(--kt-accent-dark);
+}
+
+.kid-mode-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.kid-mode-btn {
+  width: 100%;
+  text-align: left;
+  padding: 1.1rem 1.25rem;
+  border-radius: var(--kt-radius);
+  border: 3px solid var(--kt-bg-deep);
+  background: #fff;
+  font-family: inherit;
+  font-size: 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--kt-ink);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.kid-mode-btn:hover {
+  border-color: var(--kt-lilac);
+  background: #faf8ff;
+}
+
+.kid-mode-btn span {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--kt-muted);
+  margin-top: 0.25rem;
+}
+
+.kid-progress {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 2px dashed var(--kt-bg-deep);
+}
+
+.kid-progress-label {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.kid-progress-bar {
+  height: 14px;
+  border-radius: 999px;
+  background: var(--kt-bg-deep);
+  overflow: hidden;
+}
+
+.kid-progress-fill {
+  height: 100%;
+  width: 35%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--kt-lime), #5ec95e);
+}
+
+.kid-lesson-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.kid-lesson-btn {
+  padding: 1rem 1.15rem;
+  border-radius: 1rem;
+  border: 3px solid var(--kt-bg-deep);
+  background: #fff;
+  font-family: inherit;
+  font-size: 1.15rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  color: var(--kt-ink);
+}
+
+.kid-lesson-btn:hover {
+  border-color: var(--kt-accent);
+}
+
+.kid-lesson-btn small {
+  display: block;
+  font-weight: 500;
+  color: var(--kt-muted);
+  font-size: 0.9rem;
+  margin-top: 0.2rem;
+}
+
+.kid-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
+/* LiveKit tutor screen */
+.tutor-connect-panel {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.tutor-connect-lead {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  max-width: 28rem;
+  margin: 0 auto 1rem;
+}
+
+.tutor-room-hint {
+  font-size: 0.75rem;
+  color: var(--kt-muted);
+  word-break: break-all;
+}
+
+.tutor-room-hint code {
+  background: var(--kt-bg);
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.35rem;
+}
+
+.tutor-error {
+  color: #c0392b;
+  font-weight: 600;
+  margin: 0.75rem 0;
+}
+
+.tutor-livekit-root {
+  width: 100%;
+  min-height: 60vh;
+}
+
+.tutor-livekit-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 55vh;
+}
+
+.tutor-livekit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tutor-livekit-badge {
+  font-weight: 700;
+  font-size: 1.05rem;
+  background: var(--kt-lime);
+  color: #1a3d1f;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+}
+
+.tutor-video-shell {
+  flex: 1;
+  min-height: 280px;
+  border-radius: var(--kt-radius);
+  overflow: hidden;
+  background: #0d1b2a;
+  border: 4px solid var(--kt-bg-deep);
+}
+
+.tutor-video-shell .lk-video-conference {
+  height: 100%;
+  min-height: 260px;
+}
+
+.tutor-livekit-tip {
+  text-align: center;
+  color: var(--kt-muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.tutor-status {
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  margin-bottom: 0.75rem;
+}
+
+.tutor-status strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 1.05rem;
+}
+
+.tutor-status-info {
+  background: #e3f2fd;
+  color: #0d47a1;
+  border: 2px solid #90caf9;
+}
+
+.tutor-status-ok {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 2px solid #a5d6a7;
+}
+
+.tutor-status-warn {
+  background: #fff8e1;
+  color: #5d4037;
+  border: 2px solid #ffcc80;
+}
+
+.tutor-status-detail {
+  margin: 0.5rem 0 0;
+  font-size: 0.88rem;
+}
+
+.tutor-status-code {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+
+.tutor-start-audio-wrap {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #fff3e0;
+  border-radius: 1rem;
+  border: 2px dashed #ffb74d;
+  text-align: center;
+}
+
+.tutor-start-audio-wrap .lk-start-audio-button,
+.tutor-start-audio-wrap button {
+  font-family: inherit;
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+  padding: 0.75rem 1.25rem !important;
+  border-radius: 999px !important;
+}
+
+@media (min-width: 600px) {
+  .kid-mode-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Lesson picture strip (word + image) */
+.lesson-visual {
+  border-radius: var(--kt-radius);
+  background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
+  border: 3px solid var(--kt-bg-deep);
+  padding: 0.85rem 1rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.lesson-visual-loading,
+.lesson-visual-error {
+  text-align: center;
+  font-weight: 600;
+  color: var(--kt-muted);
+}
+
+.lesson-visual-error {
+  color: #c0392b;
+}
+
+.lesson-visual-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  color: var(--kt-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.lesson-visual-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.lesson-visual-img {
+  width: min(100%, 280px);
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 1rem;
+  background: #fff;
+  border: 3px solid var(--kt-lilac);
+  box-shadow: var(--kt-shadow);
+}
+
+.lesson-visual-placeholder {
+  width: min(100%, 280px);
+  height: 200px;
+  border-radius: 1rem;
+  border: 3px dashed var(--kt-bg-deep);
+  background: var(--kt-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.lesson-visual-placeholder-emoji {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.lesson-visual-placeholder-text {
+  font-size: 0.9rem;
+  color: var(--kt-muted);
+  font-weight: 600;
+}
+
+.lesson-visual-word {
+  margin: 0;
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  font-weight: 700;
+  text-transform: capitalize;
+  color: var(--kt-ink);
+  letter-spacing: 0.02em;
+}
+
+.lesson-visual-caption {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--kt-muted);
+  text-align: center;
+}
+
+.lesson-visual-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.lesson-visual-step {
+  font-weight: 700;
+  color: var(--kt-ink);
+  min-width: 4rem;
+  text-align: center;
+}

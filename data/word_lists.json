@@ -1,0 +1,56 @@
+{
+  "animals": [
+    "cat",
+    "dog",
+    "bird",
+    "fish",
+    "elephant",
+    "lion",
+    "rabbit",
+    "frog",
+    "butterfly",
+    "horse"
+  ],
+  "colors": [
+    "red",
+    "blue",
+    "yellow",
+    "green",
+    "orange",
+    "purple",
+    "pink",
+    "black",
+    "white",
+    "brown"
+  ],
+  "shapes": [
+    "circle",
+    "square",
+    "triangle",
+    "star",
+    "heart",
+    "rectangle",
+    "oval",
+    "diamond"
+  ],
+  "fairytales": [
+    "castle",
+    "princess",
+    "prince",
+    "dragon",
+    "fairy",
+    "magic",
+    "king",
+    "queen",
+    "wand",
+    "crown"
+  ],
+  "foods": [
+    { "word": "banana", "image": "banana.svg" },
+    { "word": "apple", "image": "apple.jpg" },
+    { "word": "grape" },
+    { "word": "bread" },
+    { "word": "milk" },
+    { "word": "cheese" }
+  ]
+}

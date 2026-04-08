@@ -1,0 +1,8 @@
+python-dotenv~=1.1
+bithuman>=1.7.0
+livekit-agents[openai,bithuman,silero]~=1.4
+fastapi>=0.115
+uvicorn[standard]>=0.32
+sounddevice>=0.4
+opencv-python>=4.8
+numpy>=1.24

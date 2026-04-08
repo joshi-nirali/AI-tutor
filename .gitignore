@@ -1,0 +1,52 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+
+# Python virtualenv (also ignored from repo root; keep for local tools)
+venv/
+.venv/
+
+# Generated audio / local scratch
+*.wav
+
+# Local Essence model file — large; use cloud agent or set BITHUMAN_MODEL_PATH
+*.imx
+
+# Editor / scratch files
+Untitled
+.DS_Store
