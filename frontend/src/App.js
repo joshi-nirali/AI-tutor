@@ -10,45 +10,57 @@ const AVATARS = [
     emoji: "🦁",
     name: "Leo",
     blurb: "Loves stories & big words",
+    quote: "Roar! I'm Leo. Let's learn and play together!",
+    ring: "lavender",
   },
   {
     id: "luna",
     emoji: "🦉",
     name: "Luna",
     blurb: "Patient with sounds",
+    quote: "Hoot! I'll help you with every sound.",
+    ring: "mint",
   },
   {
     id: "soon",
     emoji: "✨",
     name: "More friends",
     blurb: "Coming soon",
+    quote: "New buddies are on the way!",
+    ring: "sun",
     locked: true,
   },
 ];
 
 const LESSONS = [
-  { slug: "animals", title: "Animals", hint: "Cats, elephants, and more" },
-  { slug: "foods", title: "Foods", hint: "Banana, apple, and more" },
-  { slug: "colors", title: "Colors", hint: "Rainbows & everyday things" },
-  { slug: "shapes", title: "Shapes", hint: "Circles, stars, squares" },
-  { slug: "fairytales", title: "Fairy tales", hint: "Kings, castles, magic" },
+  { slug: "animals", title: "Animals", hint: "Cats, elephants, and more", emoji: "🐾", theme: "amber" },
+  { slug: "foods", title: "Foods", hint: "Banana, apple, and more", emoji: "🍎", theme: "peach" },
+  { slug: "colors", title: "Colors", hint: "Rainbows & everyday things", emoji: "🌈", theme: "sky" },
+  { slug: "shapes", title: "Shapes", hint: "Circles, stars, squares", emoji: "⭐", theme: "lilac" },
+  { slug: "fairytales", title: "Fairy tales", hint: "Kings, castles, magic", emoji: "🏰", theme: "pink" },
 ];
 
 const MODES = [
   {
     id: "vocabulary",
     title: "Learn vocabulary",
-    hint: "Meaning, examples, then say the word",
+    hint: "Discover new words with fun pictures!",
+    emoji: "📖",
+    theme: "vocab",
   },
   {
     id: "speaking",
     title: "Speaking practice",
-    hint: "Listen and repeat together",
+    hint: "Say it out loud with your tutor friend!",
+    emoji: "🎤",
+    theme: "speak",
   },
   {
     id: "quiz",
     title: "Quiz mode",
-    hint: "Fun questions & gentle scoring",
+    hint: "Show off what you've learned!",
+    emoji: "🎯",
+    theme: "quiz",
   },
 ];
 
@@ -111,20 +123,52 @@ export default function App() {
 
   const tutorLabel =
     AVATARS.find((a) => a.id === avatarId && !a.locked)?.name || "Leo";
+  const tutorEmoji =
+    AVATARS.find((a) => a.id === avatarId && !a.locked)?.emoji || "🦁";
+  const tutorPick = AVATARS.find((a) => a.id === avatarId) || AVATARS[0];
 
   const tutorActive = screen === "tutor" && mode && topicSlug;
+  const flowWide =
+    screen === "name" ||
+    screen === "avatar" ||
+    screen === "home" ||
+    screen === "lesson";
+
+  const scrollToParentNote = () => {
+    document.getElementById("kid-parent-note")?.scrollIntoView({ behavior: "smooth" });
+  };
 
   return (
     <div className="kid-app">
-      <div className={`kid-shell${tutorActive ? " kid-shell--tutor" : ""}`}>
-        <header className="kid-brand">
-          <h1>Leo&apos;s learning corner</h1>
-          <p>Talk, listen, and learn — with a friendly tutor</p>
-        </header>
+      <div
+        className={`kid-shell${tutorActive ? " kid-shell--tutor" : ""}${
+          flowWide ? " kid-shell--flow" : ""
+        }`}
+      >
+        <nav className="kid-appbar" aria-label="App">
+          <div className="kid-appbar-brand">
+            <span className="kid-appbar-star" aria-hidden>
+              ★
+            </span>
+            <span className="kid-appbar-title">Leo&apos;s Learning</span>
+          </div>
+          <button type="button" className="kid-appbar-parents" onClick={scrollToParentNote}>
+            <span className="kid-appbar-gear" aria-hidden>
+              ⚙
+            </span>
+            Parents
+          </button>
+        </nav>
 
         {screen === "name" && (
-          <section className="kid-card">
-            <h2>Hi! What should we call you?</h2>
+          <section className="kid-card kid-card-hero">
+            <div className="kid-sparkles" aria-hidden>
+              <span>✦</span>
+              <span>✦</span>
+              <span>✦</span>
+            </div>
+            <h1 className="kid-hero-heading">Hi! What should we call you?</h1>
+            <p className="kid-hero-sub">We&apos;ll cheer you on by name.</p>
             <label className="kid-label" htmlFor="kid-name">
               Your name
             </label>
@@ -140,7 +184,7 @@ export default function App() {
             <div className="kid-footer-actions">
               <button
                 type="button"
-                className="kid-btn kid-btn-primary kid-btn-xl"
+                className="kid-btn kid-btn-primary kid-btn-xl kid-btn-cta"
                 onClick={persistName}
               >
                 Continue
@@ -150,24 +194,47 @@ export default function App() {
         )}
 
         {screen === "avatar" && (
-          <section className="kid-card">
-            <h2>Pick your tutor friend</h2>
-            <div className="kid-avatar-grid">
-              {AVATARS.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  className={`kid-avatar-tile ${avatarId === a.id ? "selected" : ""} ${a.locked ? "locked" : ""}`}
-                  onClick={() => selectAvatar(a)}
-                  disabled={a.locked}
-                >
-                  <div className="kid-avatar-emoji" aria-hidden>
-                    {a.emoji}
-                  </div>
-                  <div className="kid-avatar-name">{a.name}</div>
-                  <div className="kid-avatar-note">{a.blurb}</div>
-                </button>
-              ))}
+          <section className="kid-card kid-card-tutor-page">
+            <h2 className="kid-page-title">Choose your Tutor</h2>
+            <p className="kid-page-sub">Pick a friend to help you learn today!</p>
+            <div className="kid-tutor-picker">
+              <div className="kid-tutor-picker-grid">
+                {AVATARS.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={`kid-avatar-tile kid-avatar-tile--${a.ring} ${
+                      avatarId === a.id ? "selected" : ""
+                    } ${a.locked ? "locked" : ""}`}
+                    onClick={() => selectAvatar(a)}
+                    disabled={a.locked}
+                  >
+                    {!a.locked ? (
+                      <span className="kid-avatar-try" aria-hidden>
+                        Try me!
+                      </span>
+                    ) : null}
+                    <div className={`kid-avatar-ring kid-avatar-ring--${a.ring}`}>
+                      <span className="kid-avatar-emoji" aria-hidden>
+                        {a.emoji}
+                      </span>
+                    </div>
+                    <div className="kid-avatar-name">{a.name}</div>
+                    <div className="kid-avatar-note">{a.blurb}</div>
+                  </button>
+                ))}
+              </div>
+              <aside className="kid-tutor-preview" aria-live="polite">
+                <div className={`kid-tutor-preview-glow kid-tutor-preview-glow--${tutorPick.ring}`}>
+                  <span className="kid-tutor-preview-emoji" aria-hidden>
+                    {tutorPick.emoji}
+                  </span>
+                  <span className="kid-tutor-preview-sparkle" aria-hidden>
+                    ✦
+                  </span>
+                </div>
+                <blockquote className="kid-tutor-preview-quote">&ldquo;{tutorPick.quote}&rdquo;</blockquote>
+              </aside>
             </div>
             <div className="kid-footer-actions">
               <button
@@ -182,37 +249,53 @@ export default function App() {
         )}
 
         {screen === "home" && (
-          <section className="kid-card">
-            <div className="kid-welcome-banner">
-              <p>
-                Welcome <strong>{childName || "friend"}</strong>
+          <section className="kid-card kid-card-flow">
+            <div className="kid-hero-banner">
+              <p className="kid-hero-line1">
+                Welcome,{" "}
+                <span className="kid-name-highlight">{childName || "friend"}</span>
+                <span className="kid-hero-wave" aria-hidden>
+                  {" "}
+                  👋
+                </span>
               </p>
-              <p>
-                Meet your AI tutor <strong>{tutorLabel}</strong>
+              <p className="kid-hero-line2">
+                Ready for a fun adventure? Meet your AI Tutor{" "}
+                <span className="kid-tutor-highlight">
+                  {tutorLabel} {tutorEmoji}
+                </span>
               </p>
             </div>
-            <h2>Choose learning mode</h2>
-            <div className="kid-mode-grid">
+            <h2 className="kid-path-heading">
+              <span className="kid-path-heading-icon" aria-hidden>
+                ▶
+              </span>
+              Choose a Path
+            </h2>
+            <div className="kid-path-grid">
               {MODES.map((m) => (
                 <button
                   key={m.id}
                   type="button"
-                  className="kid-mode-btn"
+                  className={`kid-path-card kid-path-card--${m.theme}`}
                   onClick={() => {
                     setMode(m.id);
                     setScreen("lesson");
                   }}
                 >
-                  {m.title}
-                  <span>{m.hint}</span>
+                  <span className="kid-path-card-icon" aria-hidden>
+                    {m.emoji}
+                  </span>
+                  <span className="kid-path-card-title">{m.title}</span>
+                  <span className="kid-path-card-hint">{m.hint}</span>
                 </button>
               ))}
             </div>
-            <div className="kid-progress">
-              <div className="kid-progress-label">Progress: Beginner level</div>
-              <div className="kid-progress-bar" aria-hidden>
-                <div className="kid-progress-fill" />
-              </div>
+            <div className="kid-level-pill" role="status">
+              <span className="kid-level-stars" aria-hidden>
+                ☆☆
+              </span>
+              Level 1 — keep going!
             </div>
             <div className="kid-footer-actions">
               <button
@@ -227,24 +310,25 @@ export default function App() {
         )}
 
         {screen === "lesson" && mode && (
-          <section className="kid-card">
-            <h2>Pick a lesson theme</h2>
-            <p style={{ color: "var(--kt-muted)", marginTop: 0 }}>
-              {MODES.find((x) => x.id === mode)?.title}
-            </p>
-            <div className="kid-lesson-grid">
+          <section className="kid-card kid-card-flow">
+            <h2 className="kid-page-title">Pick a lesson theme</h2>
+            <p className="kid-page-sub">{MODES.find((x) => x.id === mode)?.title}</p>
+            <div className="kid-lesson-path-grid">
               {LESSONS.map((lesson) => (
                 <button
                   key={lesson.slug}
                   type="button"
-                  className="kid-lesson-btn"
+                  className={`kid-lesson-path-card kid-lesson-path-card--${lesson.theme}`}
                   onClick={() => {
                     setTopicSlug(lesson.slug);
                     setScreen("tutor");
                   }}
                 >
-                  {lesson.title}
-                  <small>{lesson.hint}</small>
+                  <span className="kid-lesson-path-icon" aria-hidden>
+                    {lesson.emoji}
+                  </span>
+                  <span className="kid-lesson-path-title">{lesson.title}</span>
+                  <small className="kid-lesson-path-hint">{lesson.hint}</small>
                 </button>
               ))}
             </div>
@@ -261,7 +345,7 @@ export default function App() {
         )}
 
         {screen === "tutor" && mode && topicSlug && (
-          <section className="kid-card">
+          <section className="kid-card kid-card-tutor-live">
             <TutorRoom
               livekitUrl={LIVEKIT_URL_ENV}
               tokenBaseUrl={TOKEN_URL}
@@ -279,18 +363,18 @@ export default function App() {
           </section>
         )}
 
+        <p id="kid-parent-note" className="kid-parent-note" role="note">
+          <span className="kid-parent-lock" aria-hidden>
+            🔒
+          </span>
+          Grown-ups: stay nearby while your child uses the microphone and AI tutor. For setup tips, see the
+          README in this project.
+        </p>
+
         {process.env.NODE_ENV === "development" && (
-          <p
-            style={{
-              textAlign: "center",
-              fontSize: "0.8rem",
-              color: "var(--kt-muted)",
-              marginTop: "1.5rem",
-            }}
-          >
-            Grown-ups: run <code>python token_server.py</code> and{" "}
-            <code>python agent.py dev</code>, then open this app. Without bitHuman yet, use{" "}
-            <code>KID_TUTOR_USE_AVATAR=0</code> in <code>.env</code> (voice-only).
+          <p className="kid-dev-hint">
+            Dev: run <code>python token_server.py</code> and <code>python agent.py dev</code>. Voice-only:{" "}
+            <code>KID_TUTOR_USE_AVATAR=0</code> in <code>.env</code>.
           </p>
         )}
       </div>

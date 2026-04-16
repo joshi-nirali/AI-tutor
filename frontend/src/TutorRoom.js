@@ -4,6 +4,7 @@ import {
   RoomAudioRenderer,
   VideoConference,
   StartAudio,
+  useLocalParticipant,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import TutorLiveStatus from "./TutorLiveStatus";
@@ -13,6 +14,31 @@ function sessionSuffix() {
   const a = new Uint8Array(4);
   crypto.getRandomValues(a);
   return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Must render under LiveKitRoomProvider (uses participant hooks). */
+function TutorAvatarBlock({ tutorLabel }) {
+  const { isMicrophoneEnabled } = useLocalParticipant();
+  return (
+    <div className="tutor-avatar-video-wrap">
+      <div className="tutor-avatar-video-ring">
+        <div className="tutor-avatar-video-shell">
+          <VideoConference />
+        </div>
+        <span
+          className={`tutor-avatar-video-live-dot${isMicrophoneEnabled ? " is-on" : ""}`}
+          title={isMicrophoneEnabled ? "Microphone on" : "Microphone off"}
+          aria-label={isMicrophoneEnabled ? "Microphone on" : "Microphone off"}
+        />
+      </div>
+      <p className="tutor-avatar-video-tip">
+        Say hello to {tutorLabel}! Short answers work best.
+      </p>
+      <div className="tutor-start-audio-wrap tutor-start-audio-wrap--avatar">
+        <StartAudio label="Tap to turn on sound 🔊" />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -112,32 +138,30 @@ export default function TutorRoom({
       onError={(e) => setError(e.message)}
       className="tutor-livekit-root"
     >
-      <div className="tutor-livekit-inner">
-        <header className="tutor-livekit-header">
-          <span className="tutor-livekit-badge">Talking with {tutorLabel}</span>
-          <button
-            type="button"
-            className="kid-btn kid-btn-ghost kid-btn-small"
-            onClick={onLeave}
-          >
-            End
+      <div className="tutor-livekit-inner tutor-livekit-inner--session">
+        <header className="tutor-session-header">
+          <button type="button" className="tutor-session-back" onClick={onLeave} aria-label="Leave lesson">
+            <span aria-hidden>‹</span>
           </button>
+          <div className="tutor-session-header-title">
+            <span className="tutor-session-header-star" aria-hidden>
+              ★
+            </span>
+            <span>Leo&apos;s Learning</span>
+          </div>
+          <div className="tutor-session-header-meta" aria-hidden>
+            <span className="tutor-session-level">Level 1</span>
+            <span className="tutor-session-level-stars">★☆</span>
+          </div>
         </header>
-        <div className="tutor-livekit-main">
-          <div className="tutor-livekit-col tutor-livekit-col-lesson">
-            <TutorLiveStatus tutorLabel={tutorLabel} />
-            <LessonPicturePanel apiBase={curriculumBase} topicSlug={topicSlug} tutorLabel={tutorLabel} />
-          </div>
-          <div className="tutor-livekit-col tutor-livekit-col-media">
-            <div className="tutor-video-shell">
-              <VideoConference />
-            </div>
-            <p className="tutor-livekit-tip">Say hello! Short answers work best.</p>
-            <div className="tutor-start-audio-wrap">
-              <StartAudio label="Tap to turn on sound 🔊" />
-            </div>
-          </div>
-        </div>
+        <TutorLiveStatus tutorLabel={tutorLabel} />
+        <LessonPicturePanel
+          apiBase={curriculumBase}
+          topicSlug={topicSlug}
+          tutorLabel={tutorLabel}
+          childName={childName}
+          avatarSlot={<TutorAvatarBlock tutorLabel={tutorLabel} />}
+        />
         <RoomAudioRenderer />
         {error && <p className="tutor-error">{error}</p>}
       </div>
