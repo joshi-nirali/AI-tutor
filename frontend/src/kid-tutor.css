@@ -35,6 +35,11 @@
   margin: 0 auto;
 }
 
+/* Live tutor room: use more horizontal space on desktop */
+.kid-shell--tutor {
+  max-width: min(96vw, 1420px);
+}
+
 .kid-brand {
   text-align: center;
   margin-bottom: 1.5rem;
@@ -334,6 +339,14 @@
   border-radius: 0.35rem;
 }
 
+.tutor-grownup-note {
+  font-size: 0.8rem;
+  color: var(--kt-muted);
+  max-width: 26rem;
+  margin: 0.75rem auto 0;
+  line-height: 1.4;
+}
+
 .tutor-error {
   color: #c0392b;
   font-weight: 600;
@@ -350,6 +363,31 @@
   flex-direction: column;
   gap: 0.75rem;
   min-height: 55vh;
+  width: 100%;
+}
+
+/* Mobile: lesson + status first, then video. Desktop: video left, lesson right (see media query). */
+.tutor-livekit-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.tutor-livekit-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.tutor-livekit-col-lesson {
+  order: 1;
+}
+
+.tutor-livekit-col-media {
+  order: 2;
 }
 
 .tutor-livekit-header {
@@ -370,7 +408,7 @@
 }
 
 .tutor-video-shell {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 280px;
   border-radius: var(--kt-radius);
   overflow: hidden;
@@ -457,6 +495,62 @@
 @media (min-width: 600px) {
   .kid-mode-grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Desktop / tablet landscape: avatar + controls beside the lesson card */
+@media (min-width: 900px) {
+  .tutor-livekit-inner {
+    max-width: none;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .tutor-livekit-main {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 1.5rem;
+  }
+
+  .tutor-livekit-col-media {
+    order: 1;
+    flex: 1 1 48%;
+    min-width: 0;
+  }
+
+  .tutor-livekit-col-lesson {
+    order: 2;
+    flex: 1 1 52%;
+    min-width: 0;
+  }
+
+  .tutor-video-shell {
+    min-height: 360px;
+    flex: 1 1 auto;
+  }
+
+  .tutor-video-shell .lk-video-conference {
+    min-height: 340px;
+  }
+
+  .tutor-livekit-col-media .tutor-livekit-tip {
+    margin-top: 0.25rem;
+  }
+
+  .tutor-livekit-col-media .tutor-start-audio-wrap {
+    margin-top: 0;
+  }
+
+  /* Larger flashcard area when the shell is wide */
+  .tutor-livekit-col-lesson .lesson-visual-img {
+    width: min(100%, 420px);
+    max-height: 320px;
+  }
+
+  .tutor-livekit-col-lesson .lesson-visual-placeholder {
+    width: min(100%, 420px);
+    height: 280px;
   }
 }
 
@@ -559,4 +653,18 @@
   color: var(--kt-ink);
   min-width: 4rem;
   text-align: center;
+}
+
+.lesson-visual-score {
+  margin: 0.75rem 0 0;
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--kt-muted);
+  line-height: 1.35;
+}
+
+.lesson-visual-avatar-cue {
+  font-weight: 500;
+  color: var(--kt-ink);
+  opacity: 0.85;
 }

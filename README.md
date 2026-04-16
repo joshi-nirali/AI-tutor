@@ -1,197 +1,191 @@
-# Essence + Cloud
+# Essence Cloud — Kid Tutor
 
-Run a bitHuman Essence (CPU) avatar using bitHuman's cloud infrastructure.
-No local GPU, no `.imx` model files. Just an API secret and an agent ID.
+Voice lesson app for young children: **React** (browser) joins a **LiveKit** room, a **Python agent** runs **OpenAI Realtime** speech, and optionally **bitHuman** publishes the talking avatar video. A small **token server** mints room JWTs and serves curriculum images.
+
+---
+
+## What you run locally
+
+
+| Component              | Command                    | Purpose                                                    |
+| ---------------------- | -------------------------- | ---------------------------------------------------------- |
+| Token + curriculum API | `python token_server.py`   | `GET /token`, `GET /curriculum/...`, static lesson images  |
+| LiveKit worker         | `python agent.py dev`      | Joins rooms, AI tutor, optional bitHuman avatar            |
+| Web UI                 | `cd frontend && npm start` | Usually **[http://localhost:3000](http://localhost:3000)** |
+
+
+Use **three terminals**. The UI shows a dev hint if `NODE_ENV=development`.
+
+---
 
 ## Prerequisites
 
-- Python 3.9+ (or Docker)
-- bitHuman API secret ([www.bithuman.ai](https://www.bithuman.ai/#developer) → Developer → API Keys)
-- An agent ID (create one at [www.bithuman.ai](https://www.bithuman.ai) or via `../api/generation.py`)
-- OpenAI API key (for `agent.py`)
+- **Python 3.10+** (3.12 recommended)
+- **Node.js 18+** and npm
+- **LiveKit Cloud** project ([cloud.livekit.io](https://cloud.livekit.io)) — WebSocket URL (`wss://...`) and API key + secret  
+- **OpenAI API key** (Realtime / voice)
+- **bitHuman** API secret + agent ID — *optional* for local testing (see [Voice-only mode](#voice-only-mode-no-bithuman))
 
-## Quick Start (Full Stack)
+---
 
-```bash
-# 1. Clone and enter the directory
-git clone https://github.com/bithuman-product/examples.git
-cd examples/essence-cloud
+## Run the application (step by step)
 
-# 2. Create your .env file
-cp .env.example .env
-# Edit .env: set BITHUMAN_API_SECRET, BITHUMAN_AGENT_ID, and OPENAI_API_KEY
+### 1. Install Python dependencies
 
-# 3. Start everything
-docker compose up
-```
-
-Open **http://localhost:4202** in your browser. Click to start talking.
-
-First frame arrives in 2-4 seconds. No model files to manage -- the cloud handles all rendering.
-
-## Terminal Quickstart (no Docker)
+From the repository root:
 
 ```bash
+cd "/path/to/essence-cloud"
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+### 2. Configure the root `.env`
+
+```bash
 cp .env.example .env
-# Edit .env with your API secret and agent ID
 ```
 
-### Play an audio file through the avatar
+Edit `.env` and set at least:
 
-A sample `speech.wav` is included in this directory. Or use your own:
+
+| Variable              | Required        | Notes                                                       |
+| --------------------- | --------------- | ----------------------------------------------------------- |
+| `LIVEKIT_URL`         | Yes             | WebSocket URL from LiveKit Cloud (must start with `wss://`) |
+| `LIVEKIT_API_KEY`     | Yes             | Project API key                                             |
+| `LIVEKIT_API_SECRET`  | Yes             | Project API secret                                          |
+| `OPENAI_API_KEY`      | Yes             | For `agent.py`                                              |
+| `BITHUMAN_API_SECRET` | If using avatar | Omit or use voice-only mode below                           |
+| `BITHUMAN_AGENT_ID`   | If using avatar | From [bithuman.ai](https://www.bithuman.ai)                 |
+
+
+All optional knobs (prompt packs, scoring, auto-advance, etc.) are documented inline in `.env.example`.
+
+### 3. Configure the React app
 
 ```bash
-python quickstart.py --avatar-id YOUR_AGENT_ID --audio-file speech.wav
+cp frontend/.env.example frontend/.env.local
 ```
 
-Press `Q` to quit.
+- `**REACT_APP_TOKEN_SERVER_URL**` — must point at your token endpoint (default `http://127.0.0.1:5000/token` if `token_server` listens on port 5000).
+- `**REACT_APP_LIVEKIT_URL**` — only needed if your `/token` response does not include a `url` field (the bundled `token_server.py` returns `url` from `LIVEKIT_URL`, so this is often optional).
 
-## Architecture
-
-The Docker Compose stack runs 4 services:
-
-```
-Browser ──WebRTC──> LiveKit ──dispatch──> Agent ──cloud API──> bitHuman GPU
-                      |                     |
-                   port 17880          AI conversation
-                                       (OpenAI)
-```
-
-| Service | Description | Port |
-|---------|-------------|------|
-| **livekit** | WebRTC media server | 17880 |
-| **agent** | AI conversation + avatar orchestration | (internal) |
-| **frontend** | Web UI | 4202 |
-| **redis** | LiveKit state | (internal) |
-
-## Configuration
-
-All configuration is via `.env`. See `.env.example` for all options.
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `BITHUMAN_API_SECRET` | Yes | API secret from bithuman.ai |
-| `BITHUMAN_AGENT_ID` | Yes | Agent code (e.g. `A78WKV4515`) |
-| `OPENAI_API_KEY` | Yes | For AI conversation |
-| `OPENAI_VOICE` | No | TTS voice, default `coral` |
-| `AGENT_PROMPT` | No | AI persona / system prompt (see [Customization](#customization)) |
-
-## Customization
-
-Edit `.env` to change the avatar's personality or voice:
+### 4. Install frontend dependencies
 
 ```bash
-# AI persona -- controls how the avatar responds
-AGENT_PROMPT="You are a friendly tech support agent. Help users troubleshoot issues step by step."
-
-# Voice -- OpenAI TTS voice (options: alloy, ash, ballad, coral, echo, fable, onyx, nova, sage, shimmer, verse)
-OPENAI_VOICE=sage
+cd frontend
+npm install
+cd ..
 ```
 
-After changing `.env`, restart the agent:
-```bash
-docker compose restart agent
-```
-
-If left unset, `AGENT_PROMPT` defaults to `"You are a helpful assistant. Respond concisely."` and `OPENAI_VOICE` defaults to `coral`.
-
-## Deployment Scenarios
-
-### Scenario A: Everything on One Machine (Local)
-
-When your browser and the stack run on the **same machine**:
+### 5. Start the token server
 
 ```bash
-docker compose up
+source .venv/bin/activate   # if not already active
+pip install fastapi uvicorn python-multipart
+python token_server.py
 ```
 
-Open **http://localhost:4202** in your browser. No firewall changes needed.
+Listens on **port 5000** by default (`TOKEN_SERVER_PORT` to change).  
+Quick check: open `http://127.0.0.1:5000/health` — you should see JSON with `ok: true`.
 
-### Scenario B: Remote VPS + SSH Tunnel (Browser on Your Laptop)
+### 6. Start the LiveKit agent worker
 
-When the stack runs on a **remote server** and you open the browser on your **laptop**. Easiest approach when the VPS has a restricted firewall.
-
-**On the VPS** — start the stack:
-```bash
-docker compose up
-```
-
-**On your laptop** — open an SSH tunnel, then open the browser:
-```bash
-ssh -L 4202:localhost:4202 -L 17880:localhost:17880 -L 17881:localhost:17881 user@VPS_IP
-```
-
-Open **http://localhost:4202** in your laptop browser. The tunnels forward:
-- **4202** — Web UI (Next.js frontend)
-- **17880** — LiveKit WebSocket signaling
-- **17881** — LiveKit TCP media (audio/video stream)
-
-No `.env` changes needed — the stack auto-detects `localhost` from your browser's address.
-
-### Scenario C: Remote VPS with Open Firewall
-
-If you can open ports on your VPS:
+In a **second** terminal (same repo root, venv active):
 
 ```bash
-sudo ufw allow 4202/tcp          # Web UI
-sudo ufw allow 17880/tcp         # LiveKit signaling
-sudo ufw allow 17881/tcp         # LiveKit TCP fallback
-sudo ufw allow 50700:50720/udp   # LiveKit WebRTC media (UDP)
+source .venv/bin/activate
+python agent.py dev
 ```
 
-Then access `http://YOUR_VPS_IP:4202` from any browser.
+Leave this running. It registers with LiveKit and handles rooms named like `kidtutor-{mode}-{topic}-{tutor}-{sessionId}`.
 
-## How It Works
+### 7. Start the React dev server
 
-1. The SDK connects to bitHuman's cloud with your `avatar_id`
-2. Audio is sent to the cloud, which renders the avatar
-3. Video frames stream back to your machine for display
-4. First frame arrives in 2-4 seconds
-
-No model files to manage. The cloud handles all rendering.
-
-## Verify It Works
+In a **third** terminal:
 
 ```bash
-# Check all containers are running
-docker compose ps
-
-# Check agent logs for errors
-docker compose logs agent
-
-# Check frontend is accessible
-curl -s http://localhost:4202 | head -5
+cd frontend
+npm start
 ```
+
+Open **[http://localhost:3000](http://localhost:3000)** in a browser (allow microphone when prompted).
+
+### 8. Use the app
+
+1. Enter the child’s name and pick a tutor (Leo / Luna).
+2. Choose a **mode** (vocabulary, speaking, quiz) and a **lesson theme**.
+3. Tap **Start** on the tutor screen so the client fetches a token and joins the room.
+4. Ensure `**python agent.py dev`** is running — otherwise the child will see “hasn’t joined yet” after a few seconds.
+
+---
+
+## Voice-only mode (no bitHuman)
+
+If you do not have `BITHUMAN_AGENT_ID` yet, set in `.env`:
+
+```bash
+KID_TUTOR_USE_AVATAR=0
+```
+
+Then `BITHUMAN_AGENT_ID` / `BITHUMAN_API_SECRET` are not required for the agent to run (audio-only tutor).
+
+---
+
+## Production build (frontend)
+
+```bash
+cd frontend
+npm run build
+```
+
+Serve the `frontend/build` folder with any static host. Set `REACT_APP_*` at **build time** and ensure `TOKEN_SERVER_PUBLIC_URL` (or equivalent) is set on the token server if the browser calls the API from another origin.
+
+---
+
+## Project layout (main pieces)
+
+
+| Path                   | Role                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `agent.py`             | LiveKit agent: OpenAI Realtime, Silero VAD, optional bitHuman, lesson sync + pronunciation helpers |
+| `token_server.py`      | FastAPI: LiveKit JWT + curriculum JSON + lesson images                                             |
+| `frontend/`            | Create React App + LiveKit Components                                                              |
+| `data/word_lists.json` | Per-topic vocabulary for lessons                                                                   |
+| `data/prompts/*.json`  | Tutor prompts, pronunciation rules, response templates                                             |
+| `curriculum.py`        | Loads word lists / items for the agent and token server                                            |
+
+
+Legacy / extras:
+
+
+| Path                 | Role                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `quickstart.py`      | Older local LiveKit + audio demo (not the same room as the kid tutor UI)                         |
+| `docker-compose.yml` | Self-hosted LiveKit + different web UI image — not aligned with the CRA kid tutor in `frontend/` |
+
+
+---
 
 ## Troubleshooting
 
-**Agent ID not set?**
-```
-Error: BITHUMAN_AGENT_ID is required
-```
-Set `BITHUMAN_AGENT_ID` in `.env`. Get your agent ID from [www.bithuman.ai](https://www.bithuman.ai).
+**“Tutor hasn’t joined yet”**  
+Run `python agent.py dev` with the **same** `LIVEKIT_*` values as `token_server.py` and `.env`.
 
-**Invalid API secret?**
-```
-Error: 401 Unauthorized
-```
-Check `BITHUMAN_API_SECRET` in `.env`. Copy the full secret from [Developer Dashboard](https://www.bithuman.ai/#developer).
+**Token or CORS errors**  
 
-**Port 4202 already in use?**
-```bash
-# Find what's using the port
-lsof -i :4202
-# Or change the port in docker-compose.yml
-```
+- Token server must be reachable from the browser at `REACT_APP_TOKEN_SERVER_URL`.  
+- For cross-origin production setups, configure CORS on `token_server.py` and set `TOKEN_SERVER_PUBLIC_URL` so curriculum image URLs are absolute and correct.
 
-**No audio / avatar doesn't talk?**
-Check that `OPENAI_API_KEY` is set and valid in `.env`.
+**Invalid room / 400 from `/token`**  
+Room names must match: `kidtutor-{vocabulary|speaking|quiz}-{topic}-{tutor}-{id}`. The React app builds this automatically.
 
-## Files
+**No bitHuman video**  
+Confirm `KID_TUTOR_USE_AVATAR` is not `0`, credentials are set, and the worker logs show `use_avatar=True`.
 
-| File | Description |
-|------|-------------|
-| `quickstart.py` | Play audio through cloud avatar (terminal) |
-| `agent.py` | LiveKit agent for Docker-based web app |
-| `speech.wav` | Sample audio file for quickstart (13s, 16kHz) |
+---
+
+## License / upstream
+
+This tree may include patterns from bitHuman / LiveKit examples; check repository or vendor docs for license details.

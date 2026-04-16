@@ -87,6 +87,10 @@ export default function TutorRoom({
         <p className="tutor-room-hint">
           Room: <code>{roomName}</code>
         </p>
+        <p className="tutor-grownup-note" role="note">
+          Grown-ups: this session uses the microphone and AI voice services — stay nearby and supervise young
+          children online.
+        </p>
         {error && <p className="tutor-error">{error}</p>}
         <button type="button" className="kid-btn kid-btn-primary kid-btn-xl" onClick={handleStart}>
           Start with {tutorLabel} 🎤
@@ -119,16 +123,22 @@ export default function TutorRoom({
             End
           </button>
         </header>
-        <TutorLiveStatus tutorLabel={tutorLabel} />
-        <LessonPicturePanel apiBase={curriculumBase} topicSlug={topicSlug} tutorLabel={tutorLabel} />
-        <div className="tutor-video-shell">
-          <VideoConference />
+        <div className="tutor-livekit-main">
+          <div className="tutor-livekit-col tutor-livekit-col-lesson">
+            <TutorLiveStatus tutorLabel={tutorLabel} />
+            <LessonPicturePanel apiBase={curriculumBase} topicSlug={topicSlug} tutorLabel={tutorLabel} />
+          </div>
+          <div className="tutor-livekit-col tutor-livekit-col-media">
+            <div className="tutor-video-shell">
+              <VideoConference />
+            </div>
+            <p className="tutor-livekit-tip">Say hello! Short answers work best.</p>
+            <div className="tutor-start-audio-wrap">
+              <StartAudio label="Tap to turn on sound 🔊" />
+            </div>
+          </div>
         </div>
-        <p className="tutor-livekit-tip">Say hello! Short answers work best.</p>
         <RoomAudioRenderer />
-        <div className="tutor-start-audio-wrap">
-          <StartAudio label="Tap to turn on sound 🔊" />
-        </div>
         {error && <p className="tutor-error">{error}</p>}
       </div>
     </LiveKitRoom>

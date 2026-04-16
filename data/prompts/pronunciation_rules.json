@@ -1,0 +1,135 @@
+{
+  "version": "1.0",
+  "scoringModel": {
+    "exactMatchScore": 100,
+    "phonemeMatchWeight": 0.5,
+    "syllableMatchWeight": 0.2,
+    "clarityWeight": 0.2,
+    "fluencyWeight": 0.1
+  },
+  "scoreThresholds": {
+    "correct": 90,
+    "almostCorrect": 70,
+    "incorrect": 0
+  },
+  "evaluationRules": [
+    {
+      "rule": "exact_word_match",
+      "description": "If STT output matches expected word",
+      "score": 100
+    },
+    {
+      "rule": "minor_spelling_error",
+      "description": "1 character difference",
+      "scoreRange": [80, 90]
+    },
+    {
+      "rule": "phonetic_similarity",
+      "description": "Sounds similar but not exact",
+      "scoreRange": [65, 85]
+    },
+    {
+      "rule": "syllable_missing",
+      "description": "Student skips syllable",
+      "scoreRange": [50, 70]
+    },
+    {
+      "rule": "wrong_word",
+      "description": "Completely different word",
+      "scoreRange": [0, 50]
+    }
+  ],
+  "phonemeRules": [
+    {
+      "sound": "TH",
+      "commonErrors": ["T", "D", "S"],
+      "exampleWord": "three",
+      "correctionTip": "Place tongue between teeth and blow air"
+    },
+    {
+      "sound": "R",
+      "commonErrors": ["L"],
+      "exampleWord": "red",
+      "correctionTip": "Curl tongue slightly"
+    },
+    {
+      "sound": "V",
+      "commonErrors": ["W", "B"],
+      "exampleWord": "violet",
+      "correctionTip": "Touch upper teeth to lower lip"
+    },
+    {
+      "sound": "P",
+      "commonErrors": ["B"],
+      "exampleWord": "pear",
+      "correctionTip": "Push air strongly"
+    }
+  ],
+  "syllableRules": [
+    {
+      "rule": "missing_syllable",
+      "example": {
+        "correct": "banana",
+        "wrong": ["bana", "ban"]
+      },
+      "penalty": 20
+    },
+    {
+      "rule": "extra_sound",
+      "example": {
+        "correct": "apple",
+        "wrong": ["apples", "appel"]
+      },
+      "penalty": 10
+    }
+  ],
+  "fluencyRules": [
+    {
+      "rule": "hesitation",
+      "description": "Student pauses too much",
+      "penalty": 10
+    },
+    {
+      "rule": "very_fast",
+      "description": "Speech unclear due to speed",
+      "penalty": 5
+    }
+  ],
+  "aiCorrectionStrategy": [
+    {
+      "scoreRange": [90, 100],
+      "action": "praise_and_continue"
+    },
+    {
+      "scoreRange": [70, 89],
+      "action": "correct_and_retry"
+    },
+    {
+      "scoreRange": [0, 69],
+      "action": "teach_and_repeat"
+    }
+  ],
+  "retryPolicy": {
+    "maxRetries": 3,
+    "retryStrategy": [
+      "repeat_word",
+      "break_into_syllables",
+      "slow_pronunciation",
+      "example_sentence"
+    ]
+  },
+  "avatarBehaviorMapping": {
+    "correct": {
+      "emotion": "happy",
+      "animation": "celebrate"
+    },
+    "almost": {
+      "emotion": "encouraging",
+      "animation": "teach"
+    },
+    "incorrect": {
+      "emotion": "supportive",
+      "animation": "explain"
+    }
+  }
+}

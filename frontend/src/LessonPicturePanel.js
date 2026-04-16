@@ -1,4 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useMaybeRoomContext } from "@livekit/components-react";
+import { ConnectionState, RoomEvent } from "livekit-client";
+
+const KID_TUTOR_DATA_TOPIC = "kidtutor";
 
 /** Derive API origin from token URL, e.g. http://127.0.0.1:5000/token → http://127.0.0.1:5000 */
 export function curriculumApiBase(tokenUrl) {
@@ -16,10 +20,13 @@ export function curriculumApiBase(tokenUrl) {
  * Shows the current lesson word + image (from token_server /curriculum + /curriculum-media).
  */
 export default function LessonPicturePanel({ apiBase, topicSlug, tutorLabel }) {
+  const room = useMaybeRoomContext();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [index, setIndex] = useState(0);
+  const [pronunciationHint, setPronunciationHint] = useState(null);
+  const encRef = useRef(typeof TextEncoder !== "undefined" ? new TextEncoder() : null);
 
   useEffect(() => {
     if (!apiBase || !topicSlug) {
@@ -56,6 +63,50 @@ export default function LessonPicturePanel({ apiBase, topicSlug, tutorLabel }) {
 
   const prev = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
   const next = useCallback(() => setIndex((i) => Math.min(n - 1, i + 1)), [n]);
+
+  /** Push word index to the Python agent so prompts + scoring match the picture card. */
+  useEffect(() => {
+    if (!room || n < 1 || room.state !== ConnectionState.Connected) return;
+    const enc = encRef.current;
+    if (!enc) return;
+    const payload = enc.encode(
+      JSON.stringify({
+        type: "lesson_index",
+        index,
+        topicSlug,
+      })
+    );
+    room.localParticipant
+      .publishData(payload, { reliable: true, topic: KID_TUTOR_DATA_TOPIC })
+      .catch(() => {});
+  }, [room, n, index, topicSlug]);
+
+  useEffect(() => {
+    if (!room) return undefined;
+    const onData = (payload, participant, _kind, topic) => {
+      if (topic !== KID_TUTOR_DATA_TOPIC) return;
+      if (!participant || participant.isLocal) return;
+      try {
+        const text = new TextDecoder().decode(payload);
+        const msg = JSON.parse(text);
+        if (msg.topicSlug !== topicSlug) return;
+        if (msg.type === "pronunciation_result") {
+          setPronunciationHint(msg);
+        }
+        if (msg.type === "lesson_set_index" && Number.isFinite(Number(msg.index))) {
+          const maxI = Math.max(0, n - 1);
+          const idx = Math.max(0, Math.min(Math.floor(Number(msg.index)), maxI));
+          setIndex(idx);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    room.on(RoomEvent.DataReceived, onData);
+    return () => {
+      room.off(RoomEvent.DataReceived, onData);
+    };
+  }, [room, topicSlug, n]);
 
   if (!apiBase || !topicSlug) return null;
   if (loading) {
@@ -115,6 +166,26 @@ export default function LessonPicturePanel({ apiBase, topicSlug, tutorLabel }) {
           Next →
         </button>
       </div>
+      {pronunciationHint && pronunciationHint.wordIndex === index ? (
+        <p className="lesson-visual-score" role="status">
+          {pronunciationHint.band === "correct"
+            ? `Great job — ${pronunciationHint.score}/100`
+            : `${pronunciationHint.score}/100 · keep practicing`}
+          {pronunciationHint.maxedOut ? " · take a tiny break or try the next word when you’re ready" : null}
+          {pronunciationHint.avatarCue ? (
+            <span
+              className="lesson-visual-avatar-cue"
+              title={`Tutor cue: ${pronunciationHint.avatarCue.emotion || ""} · ${pronunciationHint.avatarCue.animation || ""}`}
+            >
+              {" "}
+              · {pronunciationHint.avatarCue.emotion}
+              {pronunciationHint.avatarCue.animation
+                ? ` (${pronunciationHint.avatarCue.animation})`
+                : null}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }

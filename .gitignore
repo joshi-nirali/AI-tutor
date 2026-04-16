@@ -40,6 +40,11 @@ next-env.d.ts
 venv/
 .venv/
 
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Generated audio / local scratch
 *.wav
 

@@ -112,9 +112,11 @@ export default function App() {
   const tutorLabel =
     AVATARS.find((a) => a.id === avatarId && !a.locked)?.name || "Leo";
 
+  const tutorActive = screen === "tutor" && mode && topicSlug;
+
   return (
     <div className="kid-app">
-      <div className="kid-shell">
+      <div className={`kid-shell${tutorActive ? " kid-shell--tutor" : ""}`}>
         <header className="kid-brand">
           <h1>Leo&apos;s learning corner</h1>
           <p>Talk, listen, and learn — with a friendly tutor</p>
@@ -287,7 +289,8 @@ export default function App() {
             }}
           >
             Grown-ups: run <code>python token_server.py</code> and{" "}
-            <code>python agent.py dev</code>, then open this app.
+            <code>python agent.py dev</code>, then open this app. Without bitHuman yet, use{" "}
+            <code>KID_TUTOR_USE_AVATAR=0</code> in <code>.env</code> (voice-only).
           </p>
         )}
       </div>

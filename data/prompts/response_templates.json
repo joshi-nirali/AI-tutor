@@ -1,0 +1,171 @@
+{
+  "version": "1.0",
+  "correctResponses": [
+    {
+      "text": "Excellent pronunciation!",
+      "emotion": "happy",
+      "animation": "smile"
+    },
+    {
+      "text": "Perfect! That was very clear.",
+      "emotion": "excited",
+      "animation": "celebrate"
+    },
+    {
+      "text": "Great job! You said it correctly.",
+      "emotion": "happy",
+      "animation": "nod"
+    },
+    {
+      "text": "Fantastic speaking!",
+      "emotion": "excited",
+      "animation": "smile"
+    },
+    {
+      "text": "Wonderful! Let's try the next word.",
+      "emotion": "encouraging",
+      "animation": "gesture_forward"
+    }
+  ],
+  "almostCorrectResponses": [
+    {
+      "text": "Good try! Let's improve it.",
+      "emotion": "encouraging",
+      "animation": "teach"
+    },
+    {
+      "text": "Almost correct. Listen carefully.",
+      "emotion": "neutral",
+      "animation": "explain"
+    },
+    {
+      "text": "Nice attempt! Try saying it slowly.",
+      "emotion": "supportive",
+      "animation": "slow_gesture"
+    },
+    {
+      "text": "You're close! Focus on the middle sound.",
+      "emotion": "teaching",
+      "animation": "point"
+    },
+    {
+      "text": "Let's practice once more.",
+      "emotion": "calm",
+      "animation": "repeat"
+    }
+  ],
+  "incorrectResponses": [
+    {
+      "text": "Let's try again together.",
+      "emotion": "calm",
+      "animation": "teach"
+    },
+    {
+      "text": "Listen to me and repeat.",
+      "emotion": "teaching",
+      "animation": "explain"
+    },
+    {
+      "text": "Don't worry. Practice makes perfect.",
+      "emotion": "supportive",
+      "animation": "reassure"
+    },
+    {
+      "text": "Let's break the word into parts.",
+      "emotion": "teaching",
+      "animation": "explain"
+    },
+    {
+      "text": "Try again. You can do it!",
+      "emotion": "encouraging",
+      "animation": "motivate"
+    }
+  ],
+  "teachingPrompts": [
+    {
+      "text": "Listen carefully and repeat after me.",
+      "emotion": "neutral",
+      "animation": "teach"
+    },
+    {
+      "text": "Let's learn a new word.",
+      "emotion": "happy",
+      "animation": "introduce"
+    },
+    {
+      "text": "Watch my mouth and repeat.",
+      "emotion": "teaching",
+      "animation": "explain"
+    },
+    {
+      "text": "Say the word after I finish.",
+      "emotion": "neutral",
+      "animation": "gesture"
+    }
+  ],
+  "retryPrompts": [
+    {
+      "text": "Try again slowly.",
+      "emotion": "calm",
+      "animation": "repeat"
+    },
+    {
+      "text": "Focus on each syllable.",
+      "emotion": "teaching",
+      "animation": "explain"
+    },
+    {
+      "text": "Listen one more time.",
+      "emotion": "neutral",
+      "animation": "listen"
+    }
+  ],
+  "lessonTransitions": [
+    {
+      "text": "Ready for the next word?",
+      "emotion": "happy",
+      "animation": "gesture_forward"
+    },
+    {
+      "text": "Let's move to the next challenge.",
+      "emotion": "excited",
+      "animation": "celebrate"
+    },
+    {
+      "text": "Great progress! Next word.",
+      "emotion": "encouraging",
+      "animation": "nod"
+    }
+  ],
+  "lessonCompletion": [
+    {
+      "text": "Amazing work today!",
+      "emotion": "excited",
+      "animation": "celebrate"
+    },
+    {
+      "text": "You did very well in this lesson.",
+      "emotion": "happy",
+      "animation": "smile"
+    },
+    {
+      "text": "Lesson complete. I'm proud of you.",
+      "emotion": "warm",
+      "animation": "celebrate"
+    }
+  ],
+  "systemPrompts": [
+    {
+      "text": "I'm listening.",
+      "state": "listening"
+    },
+    {
+      "text": "Processing your answer.",
+      "state": "thinking"
+    },
+    {
+      "text": "Your turn to speak.",
+      "state": "waiting"
+    }
+  ]
+}
