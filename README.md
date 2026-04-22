@@ -56,6 +56,7 @@ Edit `.env` and set at least:
 | `LIVEKIT_API_KEY`     | Yes             | Project API key                                             |
 | `LIVEKIT_API_SECRET`  | Yes             | Project API secret                                          |
 | `OPENAI_API_KEY`      | Yes             | For `agent.py`                                              |
+| `OPENAI_REALTIME_MODEL` | No          | Realtime voice model (default `gpt-realtime`). If logs show `model_not_found`, set a model your OpenAI org allows (e.g. `gpt-realtime-2025-08-28`). |
 | `BITHUMAN_API_SECRET` | If using avatar | Omit or use voice-only mode below                           |
 | `BITHUMAN_AGENT_ID`   | If using avatar | From [bithuman.ai](https://www.bithuman.ai)                 |
 

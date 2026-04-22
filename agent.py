@@ -10,6 +10,14 @@ Data channel topic ``kidtutor`` (JSON):
   - Agent → client: lesson_index_ack, pronunciation_result (may include ``avatarCue``), lesson_set_index
 
 Optional env:
+  OPENAI_REALTIME_MODEL — default ``gpt-realtime`` (GA Realtime name). Keys often lack ``gpt-4o-realtime-preview``
+  or legacy preview IDs; wrong value → ``model_not_found`` and no speech (BitHuman may never attach reliably).
+  LIVEKIT_AGENT_ICE_TRANSPORT — optional ``relay`` or ``nohost`` for the Python worker WebRTC stack; try ``relay``
+  if logs show ``Publisher pc state failed`` / ``publisher connection: timeout`` on strict firewalls.
+  KID_TUTOR_PRE_CONNECT_AUDIO — default ``1``. Set ``0`` to start the voice session without waiting for buffered
+  pre-connect mic audio (slightly snappier join; may clip the child's first syllable).
+  KID_TUTOR_AGENT_NOISE_FILTER — set ``1`` with ``pip install livekit-plugins-noise-cancellation`` to run LiveKit
+  BVC on the agent-side mic stream (stronger than browser-only suppression; do not stack with heavy client DSP).
   KID_TUTOR_USE_AVATAR — default ``1``. Set ``0`` to run voice-only (no bitHuman ``AvatarSession``); then
   ``BITHUMAN_AGENT_ID`` is not required.
   USE_BITUMAN_AVATAR — alias for ``KID_TUTOR_USE_AVATAR`` if the latter is unset.
@@ -36,7 +44,6 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
-    RoomOutputOptions,
     RunContext,
     UserInputTranscribedEvent,
     WorkerOptions,
@@ -44,6 +51,7 @@ from livekit.agents import (
     cli,
     function_tool,
 )
+from livekit.agents.voice.room_io import AudioInputOptions, RoomOptions
 from livekit.plugins import bithuman, openai, silero
 
 from curriculum import words_for_topic
@@ -74,6 +82,78 @@ TUTOR_FROM_SLUG: dict[str, tuple[str, str]] = {
 }
 
 
+def _livekit_agent_rtc_configuration() -> rtc.RtcConfiguration | None:
+    """Optional WebRTC tuning for the worker (see LIVEKIT_AGENT_ICE_TRANSPORT in .env.example)."""
+    raw = (os.getenv("LIVEKIT_AGENT_ICE_TRANSPORT") or "").strip().lower()
+    if not raw or raw in ("all", "default", "auto"):
+        return None
+    if raw == "relay":
+        logger.info("LiveKit worker ICE transport: relay (TURN-friendly)")
+        return rtc.RtcConfiguration(ice_transport_type=rtc.IceTransportType.TRANSPORT_RELAY)
+    if raw in ("nohost", "no-host", "nonhost"):
+        logger.info("LiveKit worker ICE transport: nohost")
+        return rtc.RtcConfiguration(ice_transport_type=rtc.IceTransportType.TRANSPORT_NOHOST)
+    logger.warning(
+        "Ignoring unknown LIVEKIT_AGENT_ICE_TRANSPORT=%r (use relay, nohost, or all)",
+        os.getenv("LIVEKIT_AGENT_ICE_TRANSPORT"),
+    )
+    return None
+
+
+def _kid_room_audio_input_options() -> AudioInputOptions:
+    """Mic path into OpenAI Realtime: optional BVC + pre-connect buffering."""
+    raw_pre = (os.getenv("KID_TUTOR_PRE_CONNECT_AUDIO", "1") or "1").strip().lower()
+    pre_connect = raw_pre not in ("0", "false", "no", "off")
+    nc = None
+    if (os.getenv("KID_TUTOR_AGENT_NOISE_FILTER", "") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        try:
+            from livekit.plugins import noise_cancellation as _lk_nc  # type: ignore import-not-found
+
+            nc = _lk_nc.BVC()
+            logger.info("Agent input noise filter: livekit.plugins.noise_cancellation.BVC")
+        except ImportError:
+            logger.warning(
+                "KID_TUTOR_AGENT_NOISE_FILTER is enabled but noise_cancellation plugin is missing — "
+                "pip install livekit-plugins-noise-cancellation"
+            )
+    return AudioInputOptions(pre_connect_audio=pre_connect, noise_cancellation=nc)
+
+
+async def _ensure_room_connected(room: rtc.Room, *, timeout_s: float = 45.0) -> None:
+    """Wait until the room is CONN_CONNECTED (avoids early stream_bytes / publish on flaky ICE)."""
+    if room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
+        return
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future[None] = loop.create_future()
+
+    def on_cs(state: int) -> None:
+        if state == rtc.ConnectionState.CONN_CONNECTED and not fut.done():
+            fut.set_result(None)
+        elif state == rtc.ConnectionState.CONN_DISCONNECTED and not fut.done():
+            fut.set_exception(RuntimeError("room disconnected before connection stabilized"))
+
+    room.on("connection_state_changed", on_cs)
+    try:
+        if room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
+            return
+        try:
+            await asyncio.wait_for(fut, timeout=timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "room not CONN_CONNECTED after %.0fs (state=%s); continuing — "
+                "if you see publisher timeouts, set LIVEKIT_AGENT_ICE_TRANSPORT=relay",
+                timeout_s,
+                room.connection_state,
+            )
+    finally:
+        room.off("connection_state_changed", on_cs)
+
+
 def parse_room(room_name: str) -> tuple[str, str, str, str, str]:
     """Return (mode, topic_phrase, topic_slug, tutor_name, tutor_hint). topic_slug keys word_lists.json."""
     m = _ROOM_RE.match((room_name or "").strip().lower())
@@ -93,8 +173,9 @@ def parse_room(room_name: str) -> tuple[str, str, str, str, str]:
 
 
 async def entrypoint(ctx: JobContext):
-    await ctx.connect()
+    await ctx.connect(rtc_config=_livekit_agent_rtc_configuration())
     await ctx.wait_for_participant()
+    await _ensure_room_connected(ctx.room)
 
     use_avatar = use_bithuman_avatar()
     avatar_id = (os.getenv("BITHUMAN_AGENT_ID") or "").strip()
@@ -153,10 +234,13 @@ async def entrypoint(ctx: JobContext):
             api_secret=os.getenv("BITHUMAN_API_SECRET"),
         )
 
+    realtime_model = (os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime") or "gpt-realtime").strip()
+    logger.info("OpenAI Realtime model: %s", realtime_model)
+
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             voice=os.getenv("OPENAI_VOICE", "coral"),
-            model="gpt-4o-mini-realtime-preview",
+            model=realtime_model,
         ),
         vad=silero.VAD.load(),
     )
@@ -384,13 +468,17 @@ async def entrypoint(ctx: JobContext):
 
     if avatar is not None:
         await avatar.start(session, room=ctx.room)
+        logger.info("BitHuman avatar pipeline started (expect remote identity bithuman-avatar-agent)")
     else:
         logger.info("Starting session without bitHuman avatar pipeline")
 
     await session.start(
         agent=kid_agent,
         room=ctx.room,
-        room_output_options=RoomOutputOptions(audio_enabled=False),
+        room_options=RoomOptions(
+            audio_output=False,
+            audio_input=_kid_room_audio_input_options(),
+        ),
     )
 
 

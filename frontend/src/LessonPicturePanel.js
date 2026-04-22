@@ -30,7 +30,7 @@ function speakText(text) {
 
 /**
  * Shows the current lesson word + image (from token_server /curriculum + /curriculum-media).
- * When `avatarSlot` is set, uses the split “avatar left / picture right” session layout.
+ * When `avatarSlot` is set, uses the split layout: tutor video (left), lesson picture card (right).
  */
 export default function LessonPicturePanel({
   apiBase,
@@ -254,6 +254,7 @@ export default function LessonPicturePanel({
     <div className="tutor-session">
       <div className="tutor-session-grid">
         <aside className="tutor-session-avatar-col" aria-label="Your tutor">
+          {avatarSlot}
           {showGreatJob ? (
             <div className="tutor-bubble tutor-bubble--feedback" role="status">
               <span className="tutor-bubble-sparkle" aria-hidden>
@@ -262,12 +263,13 @@ export default function LessonPicturePanel({
               Great job, {displayName}!
             </div>
           ) : (
-            <div className="tutor-bubble tutor-bubble--feedback tutor-bubble--muted" aria-hidden>
-              <span className="tutor-bubble-sparkle">✦</span>
+            <div className="tutor-bubble tutor-bubble--feedback tutor-bubble--muted">
+              <span className="tutor-bubble-sparkle" aria-hidden>
+                ✦
+              </span>
               {tutorLabel} is listening…
             </div>
           )}
-          {avatarSlot}
           <div
             className={`tutor-bubble tutor-bubble--prompt${!micListening ? " tutor-bubble--warn" : ""}`}
             role="region"

@@ -6,6 +6,10 @@ import {
 } from "@livekit/components-react";
 import { ConnectionState } from "livekit-client";
 
+function onlyLessonAgentRemotes(remotes) {
+  return remotes.length > 0 && remotes.every((p) => /^agent-/i.test(p.identity || ""));
+}
+
 /**
  * Explains common reasons the child hears no reply (agent not running, mic off, audio blocked).
  */
@@ -57,6 +61,25 @@ export default function TutorLiveStatus({ tutorLabel }) {
     return (
       <div className="tutor-status tutor-status-info" role="status">
         Waiting for {tutorLabel}…
+      </div>
+    );
+  }
+
+  if (onlyLessonAgentRemotes(remotes)) {
+    return (
+      <div className="tutor-status tutor-status-warn" role="alert">
+        <strong>Leo&apos;s video face has not joined yet.</strong>
+        <p className="tutor-status-detail">
+          The lesson program is running, but the BitHuman avatar (<code>bithuman-avatar-agent</code>) is missing.
+          Check <code>BITHUMAN_AGENT_ID</code>, <code>BITHUMAN_API_SECRET</code>, and errors in the terminal where{" "}
+          <code>python agent.py dev</code> is running.
+        </p>
+        {!isMicrophoneEnabled ? (
+          <p className="tutor-status-detail">
+            Also tap <strong>Microphone</strong> in the bar (no slash) so {tutorLabel} can hear you — that is
+            separate from your computer&apos;s mic permission.
+          </p>
+        ) : null}
       </div>
     );
   }

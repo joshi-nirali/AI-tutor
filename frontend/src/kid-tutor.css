@@ -930,9 +930,15 @@
 .tutor-session-avatar-col {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 0.85rem;
   text-align: center;
+  min-width: 0;
+  width: 100%;
+}
+
+.tutor-session-avatar-col > .tutor-bubble {
+  align-self: center;
 }
 
 .tutor-bubble {
@@ -988,35 +994,163 @@
 
 .tutor-avatar-video-wrap {
   width: 100%;
-  max-width: 280px;
+  max-width: 100%;
   margin: 0 auto;
 }
 
+/* Fills the avatar column; avoid vw widths larger than the column (caused horizontal overflow). */
 .tutor-avatar-video-ring {
   position: relative;
-  width: min(72vw, 240px);
-  height: min(72vw, 240px);
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
 }
 
+/*
+ * LiveKit: .lk-video-conference is display:flex with default row — inner has width:100%,
+ * so the control bar sits beside it and overflows. Force column + fill height so video
+ * stacks above the bar. Grid wrapper uses height calc(100% - bar); once the bar is a
+ * sibling below inner, wrappers must use 100% of inner instead (overridden below).
+ */
 .tutor-avatar-video-shell {
   width: 100%;
-  height: 100%;
-  border-radius: 50%;
+  max-width: 100%;
+  height: clamp(320px, min(52vh, 560px), 620px);
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.75rem;
   overflow: hidden;
   background: #f0f7ff;
   border: 4px solid #fff;
   box-shadow: 0 8px 32px rgba(74, 144, 226, 0.2), inset 0 0 0 1px rgba(74, 144, 226, 0.15);
+  box-sizing: border-box;
 }
 
 .tutor-avatar-video-shell .lk-video-conference {
-  min-height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
   height: 100%;
+  overflow: hidden;
+}
+
+.tutor-avatar-video-shell .lk-video-conference-inner {
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.tutor-avatar-video-shell .lk-grid-layout-wrapper,
+.tutor-avatar-video-shell .lk-focus-layout-wrapper {
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .tutor-avatar-video-shell .lk-grid-layout,
 .tutor-avatar-video-shell .lk-focus-layout {
-  min-height: 200px;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.tutor-avatar-video-shell .lk-focus-layout {
+  height: 100%;
+  max-height: 100%;
+  box-sizing: border-box;
+}
+
+.tutor-avatar-video-shell .lk-participant-tile {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+.tutor-avatar-video-shell .lk-participant-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0d1b2a;
+}
+
+.tutor-avatar-grid-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tutor-avatar-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 12rem;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--kt-muted, #607d8b);
+}
+
+.tutor-avatar-waiting code {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.06);
+  color: #37474f;
+}
+
+.tutor-avatar-video-tip strong {
+  font-weight: 700;
+  color: #1565c0;
+}
+
+.tutor-avatar-video-shell .lk-control-bar {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: 0.35rem 0.5rem;
+  padding: 0.45rem 0.35rem;
+  max-height: none;
+  min-height: var(--lk-control-bar-height, 69px);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.tutor-avatar-video-shell .lk-button-group {
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+}
+
+.tutor-avatar-video-shell .lk-device-menu {
+  left: auto;
+  right: 0;
+  max-width: min(100vw - 2rem, 22rem);
+  white-space: normal;
+}
+
+.tutor-avatar-video-shell .lk-device-menu ul,
+.tutor-avatar-video-shell .lk-media-device-select {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
 }
 
 .tutor-avatar-video-live-dot {
@@ -1054,6 +1188,7 @@
 .tutor-session-lesson-card {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   background: #fff;
   border-radius: var(--kt-radius-xl, 2rem);
   padding: 1.15rem 1.2rem 1.25rem;
@@ -1063,6 +1198,8 @@
 
 .tutor-session-lesson-media {
   position: relative;
+  max-width: 220px;
+  margin-inline: auto;
   border-radius: 1.35rem;
   overflow: hidden;
   background: #fafafa;
@@ -1076,13 +1213,15 @@
 .tutor-session-lesson-img {
   display: block;
   width: 100%;
-  max-height: min(42vh, 340px);
+  max-width: 220px;
+  max-height: min(28vh, 200px);
+  margin: 0 auto;
   object-fit: contain;
   background: #fff;
 }
 
 .tutor-session-lesson-placeholder {
-  min-height: 200px;
+  min-height: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1251,34 +1390,66 @@
 @media (min-width: 768px) {
   .tutor-session-grid {
     flex-direction: row;
-    align-items: stretch;
-    gap: 1.5rem;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 1.25rem;
   }
 
   .tutor-session-avatar-col {
-    flex: 0 0 38%;
-    max-width: 320px;
+    flex: 1 1 0;
+    min-width: min(100%, 300px);
+    max-width: none;
     margin: 0;
-    align-self: flex-start;
+    align-self: stretch;
   }
 
   .tutor-session-lesson-card {
-    flex: 1 1 58%;
+    flex: 0 0 auto;
+    width: min(100%, 240px);
+    max-width: 240px;
+    margin-left: auto;
+  }
+
+  .tutor-session-lesson-media {
+    max-width: 200px;
   }
 
   .tutor-session-lesson-img {
-    max-height: min(48vh, 380px);
+    max-width: 200px;
+    max-height: min(30vh, 200px);
   }
 
-  .tutor-avatar-video-ring {
-    width: 260px;
-    height: 260px;
+  .tutor-avatar-video-shell {
+    height: clamp(360px, min(54vh, 600px), 660px);
+    min-height: 360px;
   }
 }
 
 @media (min-width: 1024px) {
   .tutor-session-avatar-col {
-    flex-basis: 36%;
+    flex: 1 1 0;
+    min-width: min(100%, 360px);
+    max-width: none;
+  }
+
+  .tutor-session-lesson-card {
+    width: min(100%, 260px);
+    max-width: 260px;
+    margin-left: auto;
+  }
+
+  .tutor-session-lesson-media,
+  .tutor-session-lesson-img {
+    max-width: 220px;
+  }
+
+  .tutor-session-lesson-img {
+    max-height: min(32vh, 200px);
+  }
+
+  .tutor-avatar-video-shell {
+    height: clamp(400px, min(56vh, 640px), 700px);
+    min-height: 400px;
   }
 }
 
