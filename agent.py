@@ -24,8 +24,12 @@ Optional env:
   KID_TUTOR_SCORING_REPLY — default ``1``. If set to ``0``, skip interrupt+generate_reply after scoring
   (only data + instruction refresh).
   KID_TUTOR_INTERRUPT_TIMEOUT — seconds to wait for interrupt during scoring reply (default ``0.85``, max ``8``).
-  KID_TUTOR_AUTO_ADVANCE_ON_CORRECT — default ``0``. If ``1``, after a ``correct`` pronunciation band the
-  lesson index advances one step and the UI is synced (after the scoring reply).
+  KID_TUTOR_AUTO_ADVANCE_ON_CORRECT — default ``1``. After a ``correct`` pronunciation band the lesson
+  index advances one step, the UI picture is synced, and the tutor's celebration reply already introduces
+  the next word in the same turn. Set ``0`` to require manual UI/data-channel advancement.
+  KID_TUTOR_MIN_ATTEMPT_SCORE — default ``40``. Transcripts whose best similarity to the target word is
+  below this score are treated as conversation (not a pronunciation attempt) and pass through to the LLM
+  without scripted scoring feedback.
 
 Usage:
     python agent.py dev        # local dev; pair with token_server + npm start
@@ -275,10 +279,12 @@ async def entrypoint(ctx: JobContext):
         logger.info("Pronunciation reply: interrupt timeout=%.2fs", interrupt_timeout_s)
 
     auto_advance_on_correct = os.getenv(
-        "KID_TUTOR_AUTO_ADVANCE_ON_CORRECT", "0"
+        "KID_TUTOR_AUTO_ADVANCE_ON_CORRECT", "1"
     ).strip().lower() in ("1", "true", "yes", "on")
     if auto_advance_on_correct:
         logger.info("Auto-advance lesson picture on correct pronunciation: enabled")
+    else:
+        logger.info("Auto-advance lesson picture on correct pronunciation: disabled")
 
     lesson_tools: list = []
     if fixed_words:
@@ -335,6 +341,14 @@ async def entrypoint(ctx: JobContext):
         async with instruction_lock:
             await kid_agent.update_instructions(full_instructions())
 
+    min_attempt_score = max(
+        0,
+        min(
+            100,
+            int(os.getenv("KID_TUTOR_MIN_ATTEMPT_SCORE", "40").strip() or "40"),
+        ),
+    )
+
     async def handle_final_transcript(text: str) -> None:
         if mode not in ("vocabulary", "speaking"):
             return
@@ -343,7 +357,20 @@ async def entrypoint(ctx: JobContext):
         expected = lesson.expected_word()
         if not expected:
             return
+        # Only score if it actually looks like an attempt at the lesson word.
+        # Conversational chat / questions are passed straight to the LLM untouched.
+        if pronunciation_score.looks_like_chat(text):
+            logger.debug("transcript looks conversational, skipping pronunciation scoring: %r", text)
+            return
         result = pronunciation_score.score_utterance(expected, text, score_thresholds)
+        if result["score"] < min_attempt_score:
+            logger.debug(
+                "low-similarity transcript (%s vs expected=%s, score=%s) — treating as chat",
+                result["best_token"],
+                expected,
+                result["score"],
+            )
+            return
         meta = lesson.record_score(result["score"], result["band"], result["best_token"])
         cue = avatar_cue_for_band(pron_rules, result["band"])
         pr_payload: dict = {
@@ -370,7 +397,37 @@ async def entrypoint(ctx: JobContext):
                 )
             except (asyncio.TimeoutError, Exception) as e:
                 logger.debug("pronunciation interrupt: %s", e)
+
+        # Decide whether to advance BEFORE we craft the spoken reply, so the
+        # celebration sentence can flow straight into introducing the next word
+        # and the agent's instruction context already reflects the new target.
+        advanced = False
+        next_word: str | None = None
+        is_last_word = False
+        if auto_advance_on_correct and result["band"] == "correct" and lesson.words:
+            last_idx = len(lesson.words) - 1
+            if lesson.word_index < last_idx:
+                lesson.set_word_index(lesson.word_index + 1)
+                next_word = lesson.expected_word()
+                await publish_tutor_json(
+                    {
+                        "type": "lesson_set_index",
+                        "topicSlug": topic_slug,
+                        "index": lesson.word_index,
+                        "reason": "auto_advance_on_correct",
+                    }
+                )
+                advanced = True
+                logger.info(
+                    "auto-advanced lesson to index %s (next word: %s) after correct pronunciation",
+                    lesson.word_index,
+                    next_word,
+                )
+            else:
+                is_last_word = True
+
         await refresh_agent_instructions()
+
         if scoring_reply_enabled:
             try:
                 cue_hint = ""
@@ -379,6 +436,20 @@ async def entrypoint(ctx: JobContext):
                         f" Voice energy hint for this turn: {cue.get('emotion', '')} tone, "
                         f"{cue.get('animation', '')} body language (express in voice; UI may show cues)."
                     )
+                if advanced and next_word:
+                    transition = (
+                        f" Then in the SAME short turn, smoothly move on to the next word "
+                        f"\"{next_word}\": say it once clearly and ask the child to try it. "
+                        "Do not pause for confirmation between the praise and the new word — "
+                        "keep it as one upbeat 1–2 sentence reply."
+                    )
+                elif is_last_word and result["band"] == "correct":
+                    transition = (
+                        " This was the LAST word in the list — celebrate the whole lesson "
+                        "warmly in 1–2 sentences and ask if they want to play again."
+                    )
+                else:
+                    transition = ""
                 session.generate_reply(
                     instructions=(
                         f"Pronunciation check just ran. Target word: \"{expected}\". "
@@ -388,29 +459,12 @@ async def entrypoint(ctx: JobContext):
                         f"(max {meta['max_retries']}). "
                         "Give ONE short spoken reply (1–2 sentences) for a 3–7 year old; "
                         "follow your tutor personality; do not lecture."
+                        f"{transition}"
                         f"{cue_hint}"
                     ),
                 )
             except Exception as e:
                 logger.warning("generate_reply after pronunciation: %s", e)
-
-        if auto_advance_on_correct and result["band"] == "correct" and lesson.words:
-            last = len(lesson.words) - 1
-            if lesson.word_index < last:
-                lesson.set_word_index(lesson.word_index + 1)
-                await publish_tutor_json(
-                    {
-                        "type": "lesson_set_index",
-                        "topicSlug": topic_slug,
-                        "index": lesson.word_index,
-                        "reason": "auto_advance_on_correct",
-                    }
-                )
-                await refresh_agent_instructions()
-                logger.info(
-                    "auto-advanced lesson to index %s after correct pronunciation",
-                    lesson.word_index,
-                )
 
         logger.info(
             "pronunciation score=%s band=%s expected=%s best_token=%s retries=%s",
@@ -480,6 +534,65 @@ async def entrypoint(ctx: JobContext):
             audio_input=_kid_room_audio_input_options(),
         ),
     )
+
+    greeting_sent = False
+    greeting_lock = asyncio.Lock()
+
+    def _is_avatar_identity(identity: str) -> bool:
+        ident = (identity or "").lower()
+        return ident.startswith("bithuman") or "avatar" in ident
+
+    async def _send_greeting(reason: str) -> None:
+        nonlocal greeting_sent
+        async with greeting_lock:
+            if greeting_sent:
+                return
+            greeting_sent = True
+        try:
+            session.generate_reply(
+                instructions=(
+                    f"Open the session as {tutor_name}. Speak ONE warm sentence introducing "
+                    "yourself by name and welcoming the child to learning time. Then ONE short "
+                    "opener question (their name, how they feel, or favorite colour). Do NOT "
+                    "mention any vocabulary word and do NOT ask them to repeat anything yet. "
+                    "Wait for them to reply."
+                ),
+            )
+            logger.info("Sent proactive greeting prompt to kid tutor session (trigger=%s)", reason)
+        except Exception as e:
+            logger.warning("initial greeting generate_reply failed: %s", e)
+
+    def _on_track_published(
+        publication: rtc.RemoteTrackPublication,
+        participant: rtc.RemoteParticipant,
+    ) -> None:
+        if greeting_sent:
+            return
+        if _is_avatar_identity(participant.identity):
+            return
+        if publication.kind != rtc.TrackKind.KIND_AUDIO:
+            return
+        asyncio.create_task(_send_greeting("kid_mic_published"))
+
+    ctx.room.on("track_published", _on_track_published)
+
+    # If the kid already published a mic track before we attached the listener, greet now.
+    for participant in ctx.room.remote_participants.values():
+        if _is_avatar_identity(participant.identity):
+            continue
+        for pub in participant.track_publications.values():
+            if pub.kind == rtc.TrackKind.KIND_AUDIO:
+                asyncio.create_task(_send_greeting("kid_mic_already_present"))
+                break
+        if greeting_sent:
+            break
+
+    async def _greeting_fallback() -> None:
+        await asyncio.sleep(8.0)
+        if not greeting_sent:
+            await _send_greeting("fallback_timer")
+
+    asyncio.create_task(_greeting_fallback())
 
 
 if __name__ == "__main__":

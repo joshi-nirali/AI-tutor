@@ -51,12 +51,78 @@ _SKIP_TRANSCRIPTS: frozenset[str] = frozenset(
         "uh",
         "um",
         "hmm",
+        "good",
+        "fine",
+        "great",
+        "cool",
+        "nice",
+        "what",
+        "who",
+        "why",
+        "where",
+        "when",
+        "how",
+        "which",
+    }
+)
+
+_QUESTION_STARTERS: frozenset[str] = frozenset(
+    {
+        "who",
+        "what",
+        "where",
+        "when",
+        "why",
+        "how",
+        "which",
+        "whose",
+        "are",
+        "is",
+        "am",
+        "do",
+        "does",
+        "did",
+        "can",
+        "could",
+        "will",
+        "would",
+        "should",
+        "may",
+        "might",
+        "must",
+        "tell",
+        "say",
+        "show",
+        "give",
+        "let",
+        "please",
+        "i",  # "i don't know", "i want", "i am"
+        "my",
+        "your",
+        "the",
     }
 )
 
 
-def should_skip_scoring(transcript: str) -> bool:
+def looks_like_chat(transcript: str) -> bool:
+    """Heuristic: looks like conversation/question, not a pronunciation attempt."""
     t = (transcript or "").strip().lower()
+    if not t:
+        return True
+    if "?" in t:
+        return True
+    tokens = t.split()
+    if not tokens:
+        return True
+    if tokens[0].strip(".,!?'\"") in _QUESTION_STARTERS:
+        return True
+    if len(tokens) >= 4:
+        return True
+    return False
+
+
+def should_skip_scoring(transcript: str) -> bool:
+    t = (transcript or "").strip().lower().rstrip(".,!?")
     if len(t) < 2:
         return True
     if t in _SKIP_TRANSCRIPTS:
