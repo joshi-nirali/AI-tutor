@@ -22,13 +22,12 @@ const AVATARS = [
     ring: "mint",
   },
   {
-    id: "soon",
-    emoji: "✨",
-    name: "More friends",
-    blurb: "Coming soon",
-    quote: "New buddies are on the way!",
+    id: "cub",
+    emoji: "🐆",
+    name: "Cub",
+    blurb: "Playful lion cub friend",
+    quote: "Hi! I'm Cub — let's learn together!",
     ring: "sun",
-    locked: true,
   },
 ];
 
@@ -92,9 +91,12 @@ function initialScreen() {
 export default function App() {
   const [screen, setScreen] = useState(initialScreen);
   const [childName, setChildName] = useState(() => loadStored(STORAGE.name));
-  const [avatarId, setAvatarId] = useState(
-    () => loadStored(STORAGE.avatar) || "leo"
-  );
+  const [avatarId, setAvatarId] = useState(() => {
+    const raw = loadStored(STORAGE.avatar) || "leo";
+    // Legacy picker id before Cub existed — map to cub so room slug stays valid.
+    if (raw === "soon") return "cub";
+    return raw;
+  });
   const [mode, setMode] = useState(null);
   const [topicSlug, setTopicSlug] = useState(null);
   const [draftName, setDraftName] = useState("");
@@ -354,7 +356,7 @@ export default function App() {
               tokenBaseUrl={TOKEN_URL}
               mode={mode}
               topicSlug={topicSlug}
-              tutorSlug={avatarId === "soon" ? "leo" : avatarId}
+              tutorSlug={avatarId}
               childName={childName}
               tutorLabel={tutorLabel}
               onLeave={() => {

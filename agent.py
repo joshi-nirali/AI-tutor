@@ -19,7 +19,10 @@ Optional env:
   KID_TUTOR_AGENT_NOISE_FILTER — set ``1`` with ``pip install livekit-plugins-noise-cancellation`` to run LiveKit
   BVC on the agent-side mic stream (stronger than browser-only suppression; do not stack with heavy client DSP).
   KID_TUTOR_USE_AVATAR — default ``1``. Set ``0`` to run voice-only (no bitHuman ``AvatarSession``); then
-  ``BITHUMAN_AGENT_ID`` is not required.
+  BitHuman agent IDs are not required.
+  BITHUMAN_AGENT_ID — default BitHuman agent for all tutors (see ``_bithuman_agent_id_for_tutor``).
+  BITHUMAN_AGENT_ID_<SLUG> — optional per-tutor override (e.g. ``BITHUMAN_AGENT_ID_LEO``) so each
+  character in the UI can use a different bithuman.ai agent ID.
   USE_BITUMAN_AVATAR — alias for ``KID_TUTOR_USE_AVATAR`` if the latter is unset.
   KID_TUTOR_SCORING_REPLY — default ``1``. If set to ``0``, skip interrupt+generate_reply after scoring
   (only data + instruction refresh).
@@ -30,6 +33,9 @@ Optional env:
   KID_TUTOR_MIN_ATTEMPT_SCORE — default ``40``. Transcripts whose best similarity to the target word is
   below this score are treated as conversation (not a pronunciation attempt) and pass through to the LLM
   without scripted scoring feedback.
+  KID_TUTOR_POST_INTRO_SCORING_DELAY_S — after the greeting→first-word handoff, ignore pronunciation
+  scoring for this many seconds (default ``5``) so spurious STT does not fake a ``correct`` and advance.
+  KID_TUTOR_POST_ADVANCE_SCORING_DELAY_S — same idea after each auto-advance celebration (default ``3.5``).
 
 Usage:
     python agent.py dev        # local dev; pair with token_server + npm start
@@ -41,6 +47,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from dotenv import load_dotenv
 from livekit import rtc
@@ -114,6 +121,18 @@ TUTOR_FROM_SLUG: dict[str, dict[str, str]] = {
             "I think my feathers just ruffled from excitement!'"
         ),
     },
+    "cub": {
+        "name": "Cub",
+        "voice": "coral",
+        "hint": (
+            "You are Cub, a sweet young lion cub who is curious and encouraging. "
+            "You speak in a warm, clear voice — excited but not overwhelming for little kids. "
+            "You celebrate wins with short happy sounds ('Yes! You got it!') and gentle fist-pumps in your tone. "
+            "When they stumble you stay patient: 'Let's try that sound together — you've got this.' "
+            "You love silly comparisons and tiny pretend games around each word. "
+            "Keep sentences short and friendly for ages 3–7."
+        ),
+    },
 }
 
 # Fallback voice when neither the tutor config nor any env var sets one.
@@ -139,6 +158,22 @@ def _voice_for_tutor(tutor_slug: str) -> str:
         if cfg and cfg.get("voice"):
             return cfg["voice"]
     return (os.getenv("OPENAI_VOICE", "") or "").strip() or _DEFAULT_TUTOR_VOICE
+
+
+def _bithuman_agent_id_for_tutor(tutor_slug: str) -> str:
+    """Resolve the BitHuman cloud agent ID for this tutor session.
+
+    Precedence (highest first):
+      1. ``BITHUMAN_AGENT_ID_<SLUG>`` (e.g. ``BITHUMAN_AGENT_ID_LEO``) — bind each
+         picker avatar (lion cub, owl, …) to its own agent created at bithuman.ai.
+      2. ``BITHUMAN_AGENT_ID`` — single shared avatar for all tutors (legacy).
+    """
+    slug = (tutor_slug or "").strip().lower()
+    if slug:
+        per = os.getenv(f"BITHUMAN_AGENT_ID_{slug.upper()}", "").strip()
+        if per:
+            return per
+    return (os.getenv("BITHUMAN_AGENT_ID", "") or "").strip()
 
 
 def _livekit_agent_rtc_configuration() -> rtc.RtcConfiguration | None:
@@ -251,15 +286,19 @@ async def entrypoint(ctx: JobContext):
     await _ensure_room_connected(ctx.room)
 
     use_avatar = use_bithuman_avatar()
-    avatar_id = (os.getenv("BITHUMAN_AGENT_ID") or "").strip()
-    if use_avatar and not avatar_id:
-        raise ValueError(
-            "Set BITHUMAN_AGENT_ID in your .env file (or set KID_TUTOR_USE_AVATAR=0 for voice-only). "
-            "Create an agent at https://www.bithuman.ai or via api/generation.py"
-        )
 
     room_name = getattr(ctx.room, "name", "") or ""
     mode, topic, topic_slug, tutor_slug, tutor_name, tutor_hint = parse_room(room_name)
+
+    avatar_id = _bithuman_agent_id_for_tutor(tutor_slug)
+    if use_avatar and not avatar_id:
+        slug_hint = tutor_slug or "leo"
+        raise ValueError(
+            "Set BITHUMAN_AGENT_ID in your .env file, or set a per-tutor ID such as "
+            f"BITHUMAN_AGENT_ID_{slug_hint.upper()}=… for this tutor (slug from the LiveKit room name). "
+            "Create agents at https://www.bithuman.ai. "
+            "Alternatively set KID_TUTOR_USE_AVATAR=0 for voice-only."
+        )
     fixed_words = words_for_topic(topic_slug)
     base_instructions = build_kid_tutor_instructions(
         mode, topic, tutor_name, tutor_hint, fixed_words
@@ -279,6 +318,37 @@ async def entrypoint(ctx: JobContext):
     # colour?" gets matched against word_index 0 (e.g. "blue") and auto-advances
     # the picture before they ever practiced the first word. See transition_into_lesson.
     lesson_started = False
+
+    # Ignore pronunciation scoring until ``time.monotonic()`` passes this value.
+    # Realtime STT often emits bogus finals right after the tutor speaks (echo from
+    # speakers, noise, or duplicate segments). Those can fuzzy-match the lesson
+    # word → false "correct" → auto-advance while the child never spoke.
+    scoring_mute_until: float | None = None
+
+    def _post_intro_scoring_mute_s() -> float:
+        raw = (os.getenv("KID_TUTOR_POST_INTRO_SCORING_DELAY_S", "5.0") or "5.0").strip()
+        try:
+            v = float(raw)
+        except ValueError:
+            v = 5.0
+        return max(0.0, min(v, 30.0))
+
+    def _post_advance_scoring_mute_s() -> float:
+        raw = (os.getenv("KID_TUTOR_POST_ADVANCE_SCORING_DELAY_S", "3.5") or "3.5").strip()
+        try:
+            v = float(raw)
+        except ValueError:
+            v = 3.5
+        return max(0.0, min(v, 20.0))
+
+    def _extend_scoring_mute(seconds: float) -> None:
+        nonlocal scoring_mute_until
+        if seconds <= 0:
+            return
+        deadline = time.monotonic() + seconds
+        if scoring_mute_until is None or deadline > scoring_mute_until:
+            scoring_mute_until = deadline
+            logger.debug("pronunciation scoring muted for %.1fs (anti-spurious-STT window)", seconds)
 
     def full_instructions() -> str:
         return base_instructions + lesson.instruction_suffix()
@@ -474,6 +544,9 @@ async def entrypoint(ctx: JobContext):
                     "Do NOT skip past this word — wait for them to attempt it before moving on."
                 ),
             )
+            # Block scoring for a few seconds: STT often emits a junk "final" right
+            # after the model speaks, which can match the target word and auto-advance.
+            _extend_scoring_mute(_post_intro_scoring_mute_s())
             logger.info(
                 "Transitioned greeting → first lesson word (trigger=%s, word=%s)",
                 reason,
@@ -494,6 +567,15 @@ async def entrypoint(ctx: JobContext):
             # never as a pronunciation attempt, and use it to launch the lesson.
             await transition_into_lesson("first_child_utterance")
             return
+        if scoring_mute_until is not None:
+            _now = time.monotonic()
+            if _now < scoring_mute_until:
+                logger.debug(
+                    "pronunciation scoring suppressed (%.2fs left in anti-spurious STT window): %r",
+                    scoring_mute_until - _now,
+                    text,
+                )
+                return
         expected = lesson.expected_word()
         if not expected:
             return
@@ -550,6 +632,9 @@ async def entrypoint(ctx: JobContext):
                     }
                 )
                 advanced = True
+                # Celebration TTS is a common source of false "user" finals; ignore
+                # scoring briefly while the child might still be silent.
+                _extend_scoring_mute(_post_advance_scoring_mute_s())
                 logger.info(
                     "auto-advanced lesson to index %s (next word: %s) after correct pronunciation",
                     lesson.word_index,
