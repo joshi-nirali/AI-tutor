@@ -78,8 +78,11 @@ class KidLessonSession:
             lines.append(f"- Failed attempts on this word (since last success): {self.retries_after_fail} (max {self.max_retries}).")
             if self.retries_after_fail > self.max_retries:
                 lines.append(
-                    "- Many tries on this word: offer a tiny break, use syllable chunks, "
-                    "or ask if they want to skip ahead and come back."
+                    "- This word is tricky for them! Be EXTRA gentle and supportive. "
+                    "Say something like 'This is a tough one even for grown-ups!' "
+                    "Offer to skip with excitement: 'Let's go on an adventure to the next word "
+                    "and come back to this one later — it'll be easier then!' "
+                    "Never make the child feel they failed. Keep it fun and light."
                 )
         else:
             lines.append("- No scored pronunciation attempt on this word yet in this session.")

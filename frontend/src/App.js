@@ -38,6 +38,11 @@ const LESSONS = [
   { slug: "colors", title: "Colors", hint: "Rainbows & everyday things", emoji: "🌈", theme: "sky" },
   { slug: "shapes", title: "Shapes", hint: "Circles, stars, squares", emoji: "⭐", theme: "lilac" },
   { slug: "fairytales", title: "Fairy tales", hint: "Kings, castles, magic", emoji: "🏰", theme: "pink" },
+  { slug: "numbers", title: "Numbers", hint: "Count from one to ten", emoji: "🔢", theme: "amber" },
+  { slug: "body_parts", title: "Body Parts", hint: "Head, hands, and toes", emoji: "🖐️", theme: "peach" },
+  { slug: "weather", title: "Weather", hint: "Sun, rain, and rainbows", emoji: "☀️", theme: "sky" },
+  { slug: "vehicles", title: "Vehicles", hint: "Cars, trains, and planes", emoji: "🚗", theme: "lilac" },
+  { slug: "fruits", title: "Fruits", hint: "Yummy fruits to learn", emoji: "🍓", theme: "pink" },
 ];
 
 const MODES = [
@@ -141,9 +146,8 @@ export default function App() {
   return (
     <div className="kid-app">
       <div
-        className={`kid-shell${tutorActive ? " kid-shell--tutor" : ""}${
-          flowWide ? " kid-shell--flow" : ""
-        }`}
+        className={`kid-shell${tutorActive ? " kid-shell--tutor" : ""}${flowWide ? " kid-shell--flow" : ""
+          }`}
       >
         <nav className="kid-appbar" aria-label="App">
           <div className="kid-appbar-brand">
@@ -203,9 +207,8 @@ export default function App() {
                   <button
                     key={a.id}
                     type="button"
-                    className={`kid-avatar-tile kid-avatar-tile--${a.ring} ${
-                      avatarId === a.id ? "selected" : ""
-                    } ${a.locked ? "locked" : ""}`}
+                    className={`kid-avatar-tile kid-avatar-tile--${a.ring} ${avatarId === a.id ? "selected" : ""
+                      } ${a.locked ? "locked" : ""}`}
                     onClick={() => selectAvatar(a)}
                     disabled={a.locked}
                   >
@@ -358,6 +361,14 @@ export default function App() {
                 setScreen("home");
                 setTopicSlug(null);
                 setMode(null);
+              }}
+              onLessonComplete={() => {
+                // All words finished — drop the child back on the categories
+                // grid for the same path (vocabulary / speaking / quiz) so they
+                // can immediately pick another lesson without re-choosing mode.
+                // Unmounting this section cleanly disconnects the LiveKit room.
+                setScreen("lesson");
+                setTopicSlug(null);
               }}
             />
           </section>

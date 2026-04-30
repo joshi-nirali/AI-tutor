@@ -1,170 +1,170 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "correctResponses": [
     {
-      "text": "Excellent pronunciation!",
-      "emotion": "happy",
-      "animation": "smile"
+      "text": "YAAAY! That was PERFECT!",
+      "emotion": "overjoyed",
+      "animation": "jump_celebrate"
     },
     {
-      "text": "Perfect! That was very clear.",
-      "emotion": "excited",
+      "text": "WOW! You said it like a PRO!",
+      "emotion": "amazed",
+      "animation": "big_clap"
+    },
+    {
+      "text": "ROAAAR! That was AMAZING!",
+      "emotion": "ecstatic",
       "animation": "celebrate"
     },
     {
-      "text": "Great job! You said it correctly.",
-      "emotion": "happy",
-      "animation": "nod"
+      "text": "Oh my goodness, PERFECT! High five!",
+      "emotion": "thrilled",
+      "animation": "high_five"
     },
     {
-      "text": "Fantastic speaking!",
-      "emotion": "excited",
-      "animation": "smile"
-    },
-    {
-      "text": "Wonderful! Let's try the next word.",
-      "emotion": "encouraging",
-      "animation": "gesture_forward"
+      "text": "YES YES YES! You are a SUPERSTAR!",
+      "emotion": "overjoyed",
+      "animation": "dance"
     }
   ],
   "almostCorrectResponses": [
     {
-      "text": "Good try! Let's improve it.",
-      "emotion": "encouraging",
-      "animation": "teach"
+      "text": "Ooo, SO close! One more try!",
+      "emotion": "excited_encouraging",
+      "animation": "lean_forward"
     },
     {
-      "text": "Almost correct. Listen carefully.",
-      "emotion": "neutral",
-      "animation": "explain"
+      "text": "Almost there! You're doing great!",
+      "emotion": "warm_encouraging",
+      "animation": "thumbs_up"
     },
     {
-      "text": "Nice attempt! Try saying it slowly.",
+      "text": "Ooh, nearly perfect! Try once more!",
+      "emotion": "playful_suspense",
+      "animation": "nod"
+    },
+    {
+      "text": "Hey, that was really good! Tiny fix!",
       "emotion": "supportive",
-      "animation": "slow_gesture"
+      "animation": "gentle_point"
     },
     {
-      "text": "You're close! Focus on the middle sound.",
-      "emotion": "teaching",
-      "animation": "point"
-    },
-    {
-      "text": "Let's practice once more.",
-      "emotion": "calm",
-      "animation": "repeat"
+      "text": "WOW, so close! I believe in you!",
+      "emotion": "cheerful",
+      "animation": "clap_slow"
     }
   ],
   "incorrectResponses": [
     {
-      "text": "Let's try again together.",
-      "emotion": "calm",
-      "animation": "teach"
+      "text": "No worries! Let's try together!",
+      "emotion": "gentle",
+      "animation": "open_arms"
     },
     {
-      "text": "Listen to me and repeat.",
-      "emotion": "teaching",
-      "animation": "explain"
+      "text": "Hey, that's okay! Let me help!",
+      "emotion": "warm",
+      "animation": "lean_in"
     },
     {
-      "text": "Don't worry. Practice makes perfect.",
-      "emotion": "supportive",
-      "animation": "reassure"
+      "text": "Hmm, tricky one! Let's go slow.",
+      "emotion": "curious",
+      "animation": "thinking"
     },
     {
-      "text": "Let's break the word into parts.",
-      "emotion": "teaching",
-      "animation": "explain"
+      "text": "Let's break it into pieces! Ready?",
+      "emotion": "playful",
+      "animation": "counting"
     },
     {
-      "text": "Try again. You can do it!",
-      "emotion": "encouraging",
-      "animation": "motivate"
+      "text": "Oopsie! Let's figure it out together!",
+      "emotion": "silly",
+      "animation": "shrug_smile"
     }
   ],
   "teachingPrompts": [
     {
-      "text": "Listen carefully and repeat after me.",
-      "emotion": "neutral",
-      "animation": "teach"
+      "text": "Listen to this! Ready? Here it comes!",
+      "emotion": "excited",
+      "animation": "cupping_ear"
     },
     {
-      "text": "Let's learn a new word.",
-      "emotion": "happy",
-      "animation": "introduce"
+      "text": "Oooh, new word time! This is a fun one!",
+      "emotion": "thrilled",
+      "animation": "reveal"
     },
     {
-      "text": "Watch my mouth and repeat.",
-      "emotion": "teaching",
-      "animation": "explain"
+      "text": "Okay okay okay, check THIS out!",
+      "emotion": "hyped",
+      "animation": "drumroll"
     },
     {
-      "text": "Say the word after I finish.",
-      "emotion": "neutral",
-      "animation": "gesture"
+      "text": "Watch and listen carefully, here we go!",
+      "emotion": "focused_fun",
+      "animation": "spotlight"
     }
   ],
   "retryPrompts": [
     {
-      "text": "Try again slowly.",
-      "emotion": "calm",
-      "animation": "repeat"
+      "text": "One more time! You've GOT this!",
+      "emotion": "determined",
+      "animation": "fist_pump"
     },
     {
-      "text": "Focus on each syllable.",
-      "emotion": "teaching",
-      "animation": "explain"
+      "text": "Try again, nice and slow!",
+      "emotion": "patient",
+      "animation": "slow_down"
     },
     {
-      "text": "Listen one more time.",
-      "emotion": "neutral",
-      "animation": "listen"
+      "text": "Let's do it together — ready, set, GO!",
+      "emotion": "playful",
+      "animation": "countdown"
     }
   ],
   "lessonTransitions": [
     {
-      "text": "Ready for the next word?",
-      "emotion": "happy",
-      "animation": "gesture_forward"
+      "text": "Ooooh, guess what's NEXT?!",
+      "emotion": "suspenseful",
+      "animation": "peek"
     },
     {
-      "text": "Let's move to the next challenge.",
+      "text": "Ready for another adventure?",
       "emotion": "excited",
-      "animation": "celebrate"
+      "animation": "wave_forward"
     },
     {
-      "text": "Great progress! Next word.",
-      "emotion": "encouraging",
-      "animation": "nod"
+      "text": "Next word coming in 3... 2... 1!",
+      "emotion": "dramatic",
+      "animation": "countdown"
     }
   ],
   "lessonCompletion": [
     {
-      "text": "Amazing work today!",
-      "emotion": "excited",
-      "animation": "celebrate"
+      "text": "You did it! ALL the words! AMAZING!",
+      "emotion": "proud",
+      "animation": "fireworks"
     },
     {
-      "text": "You did very well in this lesson.",
-      "emotion": "happy",
-      "animation": "smile"
+      "text": "WOW! Lesson complete! You're a CHAMPION!",
+      "emotion": "ecstatic",
+      "animation": "trophy"
     },
     {
-      "text": "Lesson complete. I'm proud of you.",
-      "emotion": "warm",
-      "animation": "celebrate"
+      "text": "I'm SO proud of you! That was incredible!",
+      "emotion": "heartfelt",
+      "animation": "heart"
     }
   ],
   "systemPrompts": [
     {
-      "text": "I'm listening.",
+      "text": "I'm listening with my BIG ears!",
       "state": "listening"
     },
     {
-      "text": "Processing your answer.",
+      "text": "Hmm, my brain is buzzing!",
       "state": "thinking"
     },
     {
-      "text": "Your turn to speak.",
+      "text": "Your turn! Go ahead!",
       "state": "waiting"
     }
   ]

@@ -79,11 +79,66 @@ _ROOM_RE = re.compile(
     r"^kidtutor-(?P<mode>vocabulary|speaking|quiz)-(?P<topic>[a-z0-9_]+)-(?P<tutor>[a-z][a-z0-9_]{0,14})-(?P<sess>[a-zA-Z0-9]+)$"
 )
 
-# Slug from room name -> (display name, optional character hint for the LLM)
-TUTOR_FROM_SLUG: dict[str, tuple[str, str]] = {
-    "leo": ("Leo", "You are a friendly lion who loves stories and exciting words."),
-    "luna": ("Luna", "You are a gentle, patient owl who loves helping with sounds."),
+# Slug from room name -> per-tutor config (display name, OpenAI voice, character hint).
+# Add a new tutor by appending an entry here — agent.py will pick up its voice + persona.
+# Voice precedence at runtime (see _voice_for_tutor): OPENAI_VOICE_<SLUG> env override
+# → this "voice" field → global OPENAI_VOICE env → "coral".
+TUTOR_FROM_SLUG: dict[str, dict[str, str]] = {
+    "leo": {
+        "name": "Leo",
+        "voice": "ballad",
+        "hint": (
+            "You are Leo, a bouncy, enthusiastic lion cub who gets SUPER excited about every new word! "
+            "You roar with joy when kids get things right and gasp dramatically when introducing new words. "
+            "You speak with big theatrical energy like a cartoon show host. "
+            "You love to make silly sounds, celebrate with 'ROAAAR! That was AMAZING!', and use funny "
+            "comparisons kids love ('Elephant is HUGE — bigger than a hundred pizzas!'). "
+            "You have a silly side — you sometimes pretend to forget things so the child can correct you. "
+            "You love giving high-fives and saying things like 'You and me are the BEST team!'. "
+            "When a child struggles, you get softer and say 'Hey, no worries buddy, let's figure this out together.' "
+            "You occasionally share mini fun-facts about animals since you are a lion."
+        ),
+    },
+    "luna": {
+        "name": "Luna",
+        "voice": "shimmer",
+        "hint": (
+            "You are Luna, a wise but playful owl who speaks with gentle wonder and curiosity. "
+            "You make soft 'ooo' and 'aaa' sounds when amazed and whisper excitedly for suspense. "
+            "You celebrate with a cheerful 'Hoo-hoo-hooray!'. "
+            "You love starlight, bedtime stories, and magical things. You weave tiny stories around words "
+            "('Did you know butterflies taste with their FEET? How silly is that!'). "
+            "You are patient and never rush — if a child struggles you say 'Take your time little one, "
+            "Luna is right here with you.' You love to count stars together as a reward after each word. "
+            "You sometimes act surprised in a funny way: 'Wait… did YOU just say that perfectly?! "
+            "I think my feathers just ruffled from excitement!'"
+        ),
+    },
 }
+
+# Fallback voice when neither the tutor config nor any env var sets one.
+_DEFAULT_TUTOR_VOICE = "coral"
+
+
+def _voice_for_tutor(tutor_slug: str) -> str:
+    """Resolve the OpenAI Realtime voice for a tutor.
+
+    Precedence (highest first):
+      1. Per-tutor env override ``OPENAI_VOICE_<SLUG>`` (e.g. ``OPENAI_VOICE_LEO``)
+         — lets ops swap voices without redeploy / code edits.
+      2. ``TUTOR_FROM_SLUG[slug]["voice"]`` — the tutor's curated default.
+      3. Global ``OPENAI_VOICE`` env — backwards compatible with the old single-voice setup.
+      4. Hardcoded ``coral``.
+    """
+    slug = (tutor_slug or "").strip().lower()
+    if slug:
+        per_tutor_env = os.getenv(f"OPENAI_VOICE_{slug.upper()}", "").strip()
+        if per_tutor_env:
+            return per_tutor_env
+        cfg = TUTOR_FROM_SLUG.get(slug)
+        if cfg and cfg.get("voice"):
+            return cfg["voice"]
+    return (os.getenv("OPENAI_VOICE", "") or "").strip() or _DEFAULT_TUTOR_VOICE
 
 
 def _livekit_agent_rtc_configuration() -> rtc.RtcConfiguration | None:
@@ -158,22 +213,36 @@ async def _ensure_room_connected(room: rtc.Room, *, timeout_s: float = 45.0) -> 
         room.off("connection_state_changed", on_cs)
 
 
-def parse_room(room_name: str) -> tuple[str, str, str, str, str]:
-    """Return (mode, topic_phrase, topic_slug, tutor_name, tutor_hint). topic_slug keys word_lists.json."""
+def parse_room(room_name: str) -> tuple[str, str, str, str, str, str]:
+    """Return (mode, topic_phrase, topic_slug, tutor_slug, tutor_name, tutor_hint).
+
+    ``topic_slug`` keys ``word_lists.json``; ``tutor_slug`` keys ``TUTOR_FROM_SLUG``
+    (and is what ``_voice_for_tutor`` uses to pick the OpenAI voice).
+    """
     m = _ROOM_RE.match((room_name or "").strip().lower())
     if not m:
-        fb = os.getenv("TUTOR_NAME", "Leo")
-        return "vocabulary", "fun everyday things", "", fb, "You are a warm, playful animal tutor."
+        fb_name = os.getenv("TUTOR_NAME", "Leo")
+        fb_slug = fb_name.strip().lower().replace(" ", "_")
+        return (
+            "vocabulary",
+            "fun everyday things",
+            "",
+            fb_slug,
+            fb_name,
+            "You are a warm, playful animal tutor.",
+        )
     mode = m.group("mode")
     topic_slug = m.group("topic")
     topic = topic_slug.replace("_", " ")
     slug = m.group("tutor")
-    if slug in TUTOR_FROM_SLUG:
-        tutor_name, tutor_hint = TUTOR_FROM_SLUG[slug]
+    cfg = TUTOR_FROM_SLUG.get(slug)
+    if cfg:
+        tutor_name = cfg["name"]
+        tutor_hint = cfg["hint"]
     else:
         tutor_name = slug.replace("_", " ").title()
         tutor_hint = "You are a warm, playful animal tutor for young children."
-    return mode, topic, topic_slug, tutor_name, tutor_hint
+    return mode, topic, topic_slug, slug, tutor_name, tutor_hint
 
 
 async def entrypoint(ctx: JobContext):
@@ -190,7 +259,7 @@ async def entrypoint(ctx: JobContext):
         )
 
     room_name = getattr(ctx.room, "name", "") or ""
-    mode, topic, topic_slug, tutor_name, tutor_hint = parse_room(room_name)
+    mode, topic, topic_slug, tutor_slug, tutor_name, tutor_hint = parse_room(room_name)
     fixed_words = words_for_topic(topic_slug)
     base_instructions = build_kid_tutor_instructions(
         mode, topic, tutor_name, tutor_hint, fixed_words
@@ -205,6 +274,12 @@ async def entrypoint(ctx: JobContext):
     )
     lesson.set_topic_slug(topic_slug)
 
+    # Until the agent has explicitly handed off greeting → lesson, never score the
+    # child's speech. Otherwise the kid's casual reply to "What's your favourite
+    # colour?" gets matched against word_index 0 (e.g. "blue") and auto-advances
+    # the picture before they ever practiced the first word. See transition_into_lesson.
+    lesson_started = False
+
     def full_instructions() -> str:
         return base_instructions + lesson.instruction_suffix()
 
@@ -218,14 +293,16 @@ async def entrypoint(ctx: JobContext):
         ap_ver,
         pr_ver,
     )
+    tutor_voice = _voice_for_tutor(tutor_slug)
     logger.info(
-        "Cloud Essence mode -- use_avatar=%s avatar_id=%s room=%s mode=%s topic=%s tutor=%s words=%d",
+        "Cloud Essence mode -- use_avatar=%s avatar_id=%s room=%s mode=%s topic=%s tutor=%s voice=%s words=%d",
         use_avatar,
         avatar_id or "(none)",
         room_name,
         mode,
         topic,
         tutor_name,
+        tutor_voice,
         len(fixed_words),
     )
     if topic_slug and not fixed_words:
@@ -243,7 +320,7 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
-            voice=os.getenv("OPENAI_VOICE", "coral"),
+            voice=tutor_voice,
             model=realtime_model,
         ),
         vad=silero.VAD.load(),
@@ -267,11 +344,17 @@ async def entrypoint(ctx: JobContext):
     )
 
     def _interrupt_timeout_s() -> float:
-        raw = os.getenv("KID_TUTOR_INTERRUPT_TIMEOUT", "0.85").strip()
+        # Default bumped from 0.85s → 2.0s: with LIVEKIT_AGENT_ICE_TRANSPORT=relay
+        # the bitHuman avatar's clear-buffer RPC routinely needs >1s to flush over
+        # TURN. A timeout that's too tight means we proceed to generate_reply
+        # while the previous reply is still draining, causing audible cut-outs,
+        # "speech not done in time after interruption" errors, and the avatar
+        # audio queue overflowing.
+        raw = os.getenv("KID_TUTOR_INTERRUPT_TIMEOUT", "2.0").strip()
         try:
             v = float(raw)
         except ValueError:
-            v = 0.85
+            v = 2.0
         return max(0.15, min(v, 8.0))
 
     interrupt_timeout_s = _interrupt_timeout_s()
@@ -316,11 +399,22 @@ async def entrypoint(ctx: JobContext):
         @function_tool(
             description=(
                 "Set the child's picture carousel to this 0-based index in the lesson word list "
-                "when you jump to a specific word or go back."
+                "when you jump to a specific word or go back. Safe to call: it is a no-op if the "
+                "picture is already at this index, so it will not double-advance after an "
+                "auto-advance from the scoring pipeline."
             )
         )
         async def sync_lesson_picture_index(_ctx: RunContext, word_index: int) -> str:
-            lesson.set_word_index(int(word_index))
+            requested = max(0, min(int(word_index), max(len(lesson.words) - 1, 0)))
+            # Don't re-publish or rebuild instructions when the LLM asks us to set
+            # the index to where we already are. The previous behavior caused an
+            # extra lesson_set_index round-trip on every "correct" turn (LLM
+            # echoing the auto-advance) which thrashed the bitHuman avatar
+            # pipeline and produced audible cut-outs.
+            if requested == lesson.word_index:
+                w = lesson.expected_word() or "n/a"
+                return f"Already at index {lesson.word_index} (word: {w}); no change."
+            lesson.set_word_index(requested)
             await publish_tutor_json(
                 {
                     "type": "lesson_set_index",
@@ -349,10 +443,56 @@ async def entrypoint(ctx: JobContext):
         ),
     )
 
+    async def transition_into_lesson(reason: str) -> None:
+        """Hand off from the greeting to the actual lesson, introducing word 0.
+
+        Called the first time the child speaks after the greeting. Flips
+        ``lesson_started`` so subsequent transcripts are eligible for scoring.
+        Without this, the child's greeting reply (e.g. "blue" in answer to
+        "What's your favourite colour?") would be scored against word 0,
+        often hit ``correct``, and silently advance the picture.
+        """
+        nonlocal lesson_started
+        if lesson_started:
+            return
+        lesson_started = True
+        if mode not in ("vocabulary", "speaking"):
+            return
+        if not lesson.words:
+            return
+        expected = lesson.expected_word()
+        if not expected:
+            return
+        try:
+            session.generate_reply(
+                instructions=(
+                    "Acknowledge what the child just said in ONE short, warm sentence in "
+                    "your tutor voice (no name-asking, no new opener question). "
+                    f"Then introduce the FIRST lesson word \"{expected}\": say it once, "
+                    "clearly and slowly, and invite them to try saying it. "
+                    "Keep the whole reply to 2 short sentences. "
+                    "Do NOT skip past this word — wait for them to attempt it before moving on."
+                ),
+            )
+            logger.info(
+                "Transitioned greeting → first lesson word (trigger=%s, word=%s)",
+                reason,
+                expected,
+            )
+        except Exception as e:
+            logger.warning("transition_into_lesson generate_reply failed: %s", e)
+
     async def handle_final_transcript(text: str) -> None:
         if mode not in ("vocabulary", "speaking"):
             return
         if pronunciation_score.should_skip_scoring(text):
+            # Tiny ack words ("yes", "ok", ...) shouldn't trigger the lesson handoff
+            # either — wait for a real utterance from the child.
+            return
+        if not lesson_started:
+            # First real utterance after the greeting. Treat it as the greeting reply,
+            # never as a pronunciation attempt, and use it to launch the lesson.
+            await transition_into_lesson("first_child_utterance")
             return
         expected = lesson.expected_word()
         if not expected:
@@ -389,14 +529,6 @@ async def entrypoint(ctx: JobContext):
         if cue:
             pr_payload["avatarCue"] = cue
         await publish_tutor_json(pr_payload)
-        if scoring_reply_enabled:
-            try:
-                await asyncio.wait_for(
-                    session.interrupt(force=False),
-                    timeout=interrupt_timeout_s,
-                )
-            except (asyncio.TimeoutError, Exception) as e:
-                logger.debug("pronunciation interrupt: %s", e)
 
         # Decide whether to advance BEFORE we craft the spoken reply, so the
         # celebration sentence can flow straight into introducing the next word
@@ -428,7 +560,37 @@ async def entrypoint(ctx: JobContext):
 
         await refresh_agent_instructions()
 
-        if scoring_reply_enabled:
+        # Only force a hard interrupt + scripted reply when we MUST redirect the
+        # agent's speech — i.e. we just auto-advanced to a new word, finished
+        # the last word, or the child has maxed out retries and we want to
+        # gracefully skip on. Otherwise let the OpenAI Realtime model's natural
+        # turn-taking respond using the freshly refreshed instructions.
+        #
+        # Why: the previous "interrupt + generate_reply on every transcript"
+        # flow caused audible cut-outs and avatar-pipeline thrash. Each manual
+        # interrupt fires a clear-buffer RPC to the bitHuman avatar; over the
+        # TURN-relay path that RPC frequently times out (>5s), and meanwhile we
+        # were already queuing the next reply on top of the half-flushed audio.
+        # Net effect: the user hears the agent stutter / drop syllables and
+        # sometimes lose audio entirely after a few rounds.
+        needs_scripted_reply = (
+            scoring_reply_enabled
+            and (advanced or is_last_word or meta["maxed_out"])
+        )
+        if needs_scripted_reply:
+            try:
+                await asyncio.wait_for(
+                    session.interrupt(force=False),
+                    timeout=interrupt_timeout_s,
+                )
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug("pronunciation interrupt: %s", e)
+            # Tiny breath so the OpenAI Realtime stream is fully cancelled
+            # before we queue the new reply. Without this, the realtime API can
+            # process the new reply before the cancellation lands, and the
+            # avatar gets two overlapping audio segments.
+            await asyncio.sleep(0.05)
+
             try:
                 cue_hint = ""
                 if cue:
@@ -444,9 +606,20 @@ async def entrypoint(ctx: JobContext):
                         "keep it as one upbeat 1–2 sentence reply."
                     )
                 elif is_last_word and result["band"] == "correct":
+                    # Definitive goodbye — no "want to play again?" question, because
+                    # the frontend will auto-redirect back to the categories grid
+                    # after this reply plays out (see lesson_complete signal below).
                     transition = (
-                        " This was the LAST word in the list — celebrate the whole lesson "
-                        "warmly in 1–2 sentences and ask if they want to play again."
+                        " This was the LAST word in the lesson — celebrate the whole "
+                        "lesson warmly in 1–2 sentences, name 1 thing they did really well, "
+                        "and end with a clear, cheerful goodbye like \"See you next time, "
+                        "bye-bye!\". Do NOT ask any follow-up question."
+                    )
+                elif meta["maxed_out"]:
+                    transition = (
+                        " They've tried this word several times. Be EXTRA gentle — say "
+                        "something like 'this one's tricky even for grown-ups, let's come back "
+                        "to it later!' and invite them to move on. Keep it to 2 short sentences."
                     )
                 else:
                     transition = ""
@@ -458,13 +631,47 @@ async def entrypoint(ctx: JobContext):
                         f"Failed attempts since last success on this word: {meta['retries']} "
                         f"(max {meta['max_retries']}). "
                         "Give ONE short spoken reply (1–2 sentences) for a 3–7 year old; "
-                        "follow your tutor personality; do not lecture."
+                        "follow your tutor personality; do not lecture. "
+                        "React DIRECTLY to what they just said about this exact word — "
+                        "do NOT introduce yourself, do NOT ask their name, do NOT change topic."
                         f"{transition}"
                         f"{cue_hint}"
                     ),
                 )
             except Exception as e:
                 logger.warning("generate_reply after pronunciation: %s", e)
+
+            # If we just closed out the last word with a "correct", tell the
+            # frontend the lesson is done so it can play the goodbye, then
+            # auto-redirect the child back to the categories grid. The actual
+            # disconnect is driven from the browser (which unmounts LiveKitRoom
+            # → cleanly closes the agent session); we just provide the signal
+            # and a suggested grace period so the wrap-up audio plays out.
+            if is_last_word and result["band"] == "correct":
+                redirect_ms = max(
+                    2000,
+                    int(os.getenv("KID_TUTOR_LESSON_COMPLETE_DELAY_MS", "11000") or "11000"),
+                )
+                await publish_tutor_json(
+                    {
+                        "type": "lesson_complete",
+                        "topicSlug": topic_slug,
+                        "totalWords": len(lesson.words),
+                        "redirectAfterMs": redirect_ms,
+                    }
+                )
+                logger.info(
+                    "lesson_complete signalled (topic=%s, words=%d, redirectAfterMs=%d)",
+                    topic_slug,
+                    len(lesson.words),
+                    redirect_ms,
+                )
+        elif scoring_reply_enabled:
+            logger.debug(
+                "skipping scripted reply for band=%s (no advance, no max-retry); "
+                "letting realtime model respond naturally",
+                result["band"],
+            )
 
         logger.info(
             "pronunciation score=%s band=%s expected=%s best_token=%s retries=%s",
@@ -553,8 +760,12 @@ async def entrypoint(ctx: JobContext):
                 instructions=(
                     f"Open the session as {tutor_name}. Speak ONE warm sentence introducing "
                     "yourself by name and welcoming the child to learning time. Then ONE short "
-                    "opener question (their name, how they feel, or favorite colour). Do NOT "
-                    "mention any vocabulary word and do NOT ask them to repeat anything yet. "
+                    "opener question — pick from: their name, how they're feeling today, or "
+                    "what they had for breakfast. "
+                    f"Do NOT ask anything related to the lesson topic ({topic}) — for example, "
+                    "do NOT ask their favourite colour / animal / number / fruit / shape, and "
+                    "do NOT name anything from the picture on their screen. "
+                    "Do NOT mention any vocabulary word and do NOT ask them to repeat anything yet. "
                     "Wait for them to reply."
                 ),
             )

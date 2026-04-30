@@ -912,6 +912,7 @@
 
 /* Split layout: avatar column + lesson card */
 .tutor-session {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1385,6 +1386,79 @@
   color: var(--kid-sky-dark, #1aa8e6);
   text-decoration: underline;
   cursor: pointer;
+}
+
+.tutor-lesson-complete-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(20, 28, 64, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 30;
+  animation: tutor-lesson-complete-fade 220ms ease-out both;
+}
+
+.tutor-lesson-complete-card {
+  position: relative;
+  width: min(420px, 100%);
+  background: var(--kt-card, #ffffff);
+  border-radius: 24px;
+  padding: 1.6rem 1.4rem 1.4rem;
+  text-align: center;
+  box-shadow: 0 18px 38px rgba(20, 28, 64, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: center;
+  animation: tutor-lesson-complete-pop 320ms cubic-bezier(0.2, 1.1, 0.4, 1) both;
+}
+
+.tutor-lesson-complete-burst {
+  font-size: 2.4rem;
+  line-height: 1;
+  color: var(--kt-accent, #ff9a4d);
+  filter: drop-shadow(0 4px 12px rgba(255, 154, 77, 0.4));
+}
+
+.tutor-lesson-complete-title {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--kt-text, #1f2546);
+}
+
+.tutor-lesson-complete-sub {
+  margin: 0;
+  font-size: 0.98rem;
+  color: var(--kt-muted, #5b6383);
+}
+
+.tutor-lesson-complete-countdown {
+  margin: 0.1rem 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--kt-accent-dark, #f57c25);
+  letter-spacing: 0.02em;
+}
+
+@keyframes tutor-lesson-complete-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes tutor-lesson-complete-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @media (min-width: 768px) {

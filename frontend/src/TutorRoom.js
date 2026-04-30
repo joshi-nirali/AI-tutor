@@ -166,6 +166,7 @@ export default function TutorRoom({
   childName,
   tutorLabel,
   onLeave,
+  onLessonComplete,
 }) {
   const [connect, setConnect] = useState(false);
   const [error, setError] = useState(null);
@@ -308,6 +309,7 @@ export default function TutorRoom({
           tutorLabel={tutorLabel}
           childName={childName}
           avatarSlot={<TutorAvatarBlock tutorLabel={tutorLabel} />}
+          onLessonComplete={onLessonComplete}
         />
         <RoomAudioRenderer />
         {error && <p className="tutor-error">{error}</p>}

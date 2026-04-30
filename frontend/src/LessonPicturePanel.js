@@ -38,6 +38,7 @@ export default function LessonPicturePanel({
   tutorLabel,
   childName,
   avatarSlot,
+  onLessonComplete,
 }) {
   const room = useMaybeRoomContext();
   const { isMicrophoneEnabled } = useLocalParticipant();
@@ -48,7 +49,11 @@ export default function LessonPicturePanel({
   const [pronunciationHint, setPronunciationHint] = useState(null);
   const [pictureFocus, setPictureFocus] = useState(false);
   const [dockActive, setDockActive] = useState("picture");
+  const [lessonDone, setLessonDone] = useState(null);
+  const [redirectIn, setRedirectIn] = useState(null);
   const encRef = useRef(typeof TextEncoder !== "undefined" ? new TextEncoder() : null);
+  const completeTimerRef = useRef(null);
+  const tickTimerRef = useRef(null);
 
   useEffect(() => {
     setDockActive("picture");
@@ -124,6 +129,37 @@ export default function LessonPicturePanel({
           const idx = Math.max(0, Math.min(Math.floor(Number(msg.index)), maxI));
           setIndex(idx);
         }
+        if (msg.type === "lesson_complete") {
+          // Already handled (e.g., duplicate signal)? skip.
+          if (completeTimerRef.current) return;
+          const requestedDelay = Number.isFinite(Number(msg.redirectAfterMs))
+            ? Math.max(2000, Math.min(30000, Math.floor(Number(msg.redirectAfterMs))))
+            : 11000;
+          setLessonDone({
+            totalWords: Number(msg.totalWords) || n,
+          });
+          setRedirectIn(Math.ceil(requestedDelay / 1000));
+          // Live countdown for the overlay copy.
+          tickTimerRef.current = window.setInterval(() => {
+            setRedirectIn((prev) => {
+              if (prev === null) return null;
+              return prev > 1 ? prev - 1 : 0;
+            });
+          }, 1000);
+          completeTimerRef.current = window.setTimeout(() => {
+            completeTimerRef.current = null;
+            if (tickTimerRef.current) {
+              window.clearInterval(tickTimerRef.current);
+              tickTimerRef.current = null;
+            }
+            if (typeof onLessonComplete === "function") {
+              onLessonComplete({
+                topicSlug,
+                totalWords: Number(msg.totalWords) || n,
+              });
+            }
+          }, requestedDelay);
+        }
       } catch {
         /* ignore */
       }
@@ -132,7 +168,20 @@ export default function LessonPicturePanel({
     return () => {
       room.off(RoomEvent.DataReceived, onData);
     };
-  }, [room, topicSlug, n]);
+  }, [room, topicSlug, n, onLessonComplete]);
+
+  useEffect(() => {
+    return () => {
+      if (completeTimerRef.current) {
+        window.clearTimeout(completeTimerRef.current);
+        completeTimerRef.current = null;
+      }
+      if (tickTimerRef.current) {
+        window.clearInterval(tickTimerRef.current);
+        tickTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const displayName = (childName || "friend").trim() || "friend";
   const promptPhrase = current
@@ -374,6 +423,48 @@ export default function LessonPicturePanel({
           </button>
         ) : null}
       </p>
+      {lessonDone ? (
+        <div className="tutor-lesson-complete-overlay" role="dialog" aria-live="assertive">
+          <div className="tutor-lesson-complete-card">
+            <span className="tutor-lesson-complete-burst" aria-hidden>
+              ✦
+            </span>
+            <h2 className="tutor-lesson-complete-title">
+              You did it, {displayName}!
+            </h2>
+            <p className="tutor-lesson-complete-sub">
+              All {lessonDone.totalWords} words finished. {tutorLabel} is saying goodbye…
+            </p>
+            <p className="tutor-lesson-complete-countdown" aria-live="polite">
+              {redirectIn !== null && redirectIn > 0
+                ? `Back to lessons in ${redirectIn}s…`
+                : "Heading back to lessons…"}
+            </p>
+            <button
+              type="button"
+              className="kid-btn kid-btn-primary"
+              onClick={() => {
+                if (completeTimerRef.current) {
+                  window.clearTimeout(completeTimerRef.current);
+                  completeTimerRef.current = null;
+                }
+                if (tickTimerRef.current) {
+                  window.clearInterval(tickTimerRef.current);
+                  tickTimerRef.current = null;
+                }
+                if (typeof onLessonComplete === "function") {
+                  onLessonComplete({
+                    topicSlug,
+                    totalWords: lessonDone.totalWords,
+                  });
+                }
+              }}
+            >
+              Pick a new lesson now
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

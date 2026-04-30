@@ -46,11 +46,76 @@
     "crown"
   ],
   "foods": [
-    { "word": "banana", "image": "banana.svg" },
-    { "word": "apple", "image": "apple.jpg" },
-    { "word": "grape" },
-    { "word": "bread" },
-    { "word": "milk" },
-    { "word": "cheese" }
+    {
+      "word": "banana",
+      "image": "banana.svg"
+    },
+    {
+      "word": "apple",
+      "image": "apple.jpg"
+    },
+    {
+      "word": "grape"
+    },
+    {
+      "word": "bread"
+    },
+    {
+      "word": "milk"
+    },
+    {
+      "word": "cheese"
+    }
+  ],
+  "numbers": [
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten"
+  ],
+  "body_parts": [
+    "hand",
+    "nose",
+    "eyes",
+    "ears",
+    "head",
+    "feet",
+    "fingers"
+  ],
+  "weather": [
+    "sun",
+    "rain",
+    "cloud",
+    "snow",
+    "wind",
+    "rainbow",
+    "storm",
+    "summer"
+  ],
+  "vehicles": [
+    "car",
+    "bus",
+    "train",
+    "airplane",
+    "bicycle",
+    "boat",
+    "truck",
+    "helicopter"
+  ],
+  "fruits": [
+    "mango",
+    "strawberry",
+    "watermelon",
+    "pineapple",
+    "cherry",
+    "peach",
+    "kiwi",
+    "coconut"
   ]
 }
