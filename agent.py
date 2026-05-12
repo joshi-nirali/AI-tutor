@@ -7,7 +7,9 @@ The {tutor} slug (e.g. leo, luna) sets the AI's name and short character note.
 
 Data channel topic ``kidtutor`` (JSON):
   - Client → agent: {"type":"lesson_index","index":<int>,"topicSlug":<str>}
-  - Agent → client: lesson_index_ack, pronunciation_result (may include ``avatarCue``), lesson_set_index
+  - Client → agent: {"type":"child_profile","childName":<str>,"topicSlug":<str>} — name from home screen (sent when the lesson connects; multiple kids / sessions)
+  - Agent → client: lesson_index_ack, pronunciation_result (may include ``avatarCue``), lesson_set_index,
+    input_speech_started (first child speech detected on STT path — UI may hide setup loader)
 
 Optional env:
   OPENAI_REALTIME_MODEL — default ``gpt-realtime`` (GA Realtime name). Keys often lack ``gpt-4o-realtime-preview``
@@ -30,6 +32,9 @@ Optional env:
   KID_TUTOR_AUTO_ADVANCE_ON_CORRECT — default ``1``. After a ``correct`` pronunciation band the lesson
   index advances one step, the UI picture is synced, and the tutor's celebration reply already introduces
   the next word in the same turn. Set ``0`` to require manual UI/data-channel advancement.
+  KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE — default ``1``. With auto-advance on, the picture index moves only
+  after the child's next utterance (silence alone never advances). Set ``0`` for immediate picture sync on
+  each correct score (legacy behavior).
   KID_TUTOR_MIN_ATTEMPT_SCORE — default ``40``. Transcripts whose best similarity to the target word is
   below this score are treated as conversation (not a pronunciation attempt) and pass through to the LLM
   without scripted scoring feedback.
@@ -85,6 +90,32 @@ load_dotenv()
 _ROOM_RE = re.compile(
     r"^kidtutor-(?P<mode>vocabulary|speaking|quiz)-(?P<topic>[a-z0-9_]+)-(?P<tutor>[a-z][a-z0-9_]{0,14})-(?P<sess>[a-zA-Z0-9]+)$"
 )
+
+# Matches LiveKit identity from TutorRoom: child-{alphanumericSlug}-{sessionSuffix}
+_CHILD_IDENTITY_PREFIX_RE = re.compile(r"^child-([a-zA-Z0-9]{1,24})-", re.I)
+
+
+def _child_display_name_from_room(room: rtc.Room) -> str:
+    """Child name from token ``name`` (see token_server) or ``identity`` ``child-…``."""
+    try:
+        participants = list(room.remote_participants.values())
+    except Exception:
+        return ""
+    for p in participants:
+        ident = str(getattr(p, "identity", "") or "")
+        il = ident.lower()
+        if "bithuman" in il or "avatar" in il or il.startswith("agent-"):
+            continue
+        display = str(getattr(p, "name", "") or "").strip()
+        if display and display.lower() not in ("friend", "participant"):
+            return display[:80]
+        m = _CHILD_IDENTITY_PREFIX_RE.match(ident)
+        if m:
+            slug = m.group(1)
+            if slug and slug.lower() != "friend":
+                return slug[:80]
+    return ""
+
 
 # Slug from room name -> per-tutor config (display name, OpenAI voice, character hint).
 # Add a new tutor by appending an entry here — agent.py will pick up its voice + persona.
@@ -303,6 +334,12 @@ async def entrypoint(ctx: JobContext):
     base_instructions = build_kid_tutor_instructions(
         mode, topic, tutor_name, tutor_hint, fixed_words
     )
+    # Participant ``name`` from the token sometimes attaches shortly after join — brief pause helps.
+    await asyncio.sleep(0.35)
+    child_display_name = _child_display_name_from_room(ctx.room)
+    # Authoritative default when the React app publishes ``child_profile`` on connect (multi-kid same device).
+    child_name_from_app = ""
+
     pron_rules = load_pronunciation_rules()
     score_thresholds = pron_rules.get("scoreThresholds") or {}
     retry_policy = pron_rules.get("retryPolicy") or {}
@@ -350,8 +387,32 @@ async def entrypoint(ctx: JobContext):
             scoring_mute_until = deadline
             logger.debug("pronunciation scoring muted for %.1fs (anti-spurious-STT window)", seconds)
 
+    def child_identity_instruction_suffix() -> str:
+        """Teach the model how to address the learner; supports changing kids on one device."""
+        default = (child_name_from_app.strip() or (child_display_name or "").strip()).strip()
+        lines = [
+            "",
+            "## Learner name (same device may be used by different children)",
+            "**Trust order:** (1) If the child clearly states their name or nickname (e.g. \"I'm Leo\", \"call me Jo\"), "
+            "**always** use exactly what they said from then on — repeat it back correctly once so they know you heard them. "
+            "(2) The name sent from the learning app for this session (child_profile). "
+            "(3) Room join metadata, if present.",
+            "Never invent, rhyme, or substitute a different name (e.g. do not turn \"Tom\" into \"Zen\" or similar). "
+            "If speech-to-text might be wrong, still try to mirror the sounds they used; you may ask once gently to confirm.",
+        ]
+        if default:
+            lines.append(
+                f'Default name from the app for this session: "{default}". '
+                "Override immediately if they introduce themselves differently."
+            )
+        return "\n".join(lines) + "\n"
+
     def full_instructions() -> str:
-        return base_instructions + lesson.instruction_suffix()
+        return (
+            base_instructions
+            + child_identity_instruction_suffix()
+            + lesson.instruction_suffix()
+        )
 
     instruction_lock = asyncio.Lock()
 
@@ -365,7 +426,7 @@ async def entrypoint(ctx: JobContext):
     )
     tutor_voice = _voice_for_tutor(tutor_slug)
     logger.info(
-        "Cloud Essence mode -- use_avatar=%s avatar_id=%s room=%s mode=%s topic=%s tutor=%s voice=%s words=%d",
+        "Cloud Essence mode -- use_avatar=%s avatar_id=%s room=%s mode=%s topic=%s tutor=%s voice=%s words=%d child_name=%r",
         use_avatar,
         avatar_id or "(none)",
         room_name,
@@ -374,6 +435,7 @@ async def entrypoint(ctx: JobContext):
         tutor_name,
         tutor_voice,
         len(fixed_words),
+        child_display_name or "",
     )
     if topic_slug and not fixed_words:
         logger.warning("No fixed word list for topic_slug=%s (check data/word_lists.json)", topic_slug)
@@ -407,6 +469,19 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning("publish_data failed: %s", e)
 
+    input_speech_started_sent = False
+
+    async def publish_input_speech_started_once() -> None:
+        """Tell the browser once STT has seen real speech — aligns with LiveKit input pipeline warmup."""
+        nonlocal input_speech_started_sent
+        if input_speech_started_sent:
+            return
+        input_speech_started_sent = True
+        await publish_tutor_json(
+            {"type": "input_speech_started", "topicSlug": topic_slug}
+        )
+        logger.info("Published input_speech_started (child speech reached agent/STT)")
+
     scoring_reply_enabled = os.getenv("KID_TUTOR_SCORING_REPLY", "1").lower() in (
         "1",
         "true",
@@ -438,6 +513,15 @@ async def entrypoint(ctx: JobContext):
         logger.info("Auto-advance lesson picture on correct pronunciation: enabled")
     else:
         logger.info("Auto-advance lesson picture on correct pronunciation: disabled")
+
+    defer_picture_until_response = os.getenv(
+        "KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE", "1"
+    ).strip().lower() in ("1", "true", "yes", "on")
+    if auto_advance_on_correct and defer_picture_until_response:
+        logger.info(
+            "Deferred picture sync: image advances only after the child speaks (not on silence); "
+            "set KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE=0 for instant advance after each correct"
+        )
 
     lesson_tools: list = []
     if fixed_words:
@@ -538,6 +622,8 @@ async def entrypoint(ctx: JobContext):
                 instructions=(
                     "Acknowledge what the child just said in ONE short, warm sentence in "
                     "your tutor voice (no name-asking, no new opener question). "
+                    "If they just told you their name or how to address them, repeat that name back **exactly** "
+                    "in that sentence (match what they said, not a different name). "
                     f"Then introduce the FIRST lesson word \"{expected}\": say it once, "
                     "clearly and slowly, and invite them to try saying it. "
                     "Keep the whole reply to 2 short sentences. "
@@ -576,8 +662,79 @@ async def entrypoint(ctx: JobContext):
                     text,
                 )
                 return
+
+        # Waiting for any real utterance before syncing the picture to the next word after
+        # a correct score (see deferred advance below).
+        if lesson.pending_advance_to_index is not None:
+            pidx = lesson.pending_advance_to_index
+            if lesson.words and 0 <= pidx < len(lesson.words):
+                next_w = lesson.words[pidx]
+                if pronunciation_score.looks_like_readiness_acknowledgment(text, next_w):
+                    lesson.apply_pending_advance()
+                    await publish_tutor_json(
+                        {
+                            "type": "lesson_set_index",
+                            "topicSlug": topic_slug,
+                            "index": lesson.word_index,
+                            "reason": "deferred_advance_readiness",
+                        }
+                    )
+                    await refresh_agent_instructions()
+                    logger.info(
+                        "deferred picture advance applied (readiness) → index %s",
+                        lesson.word_index,
+                    )
+                    return
+                if pronunciation_score.should_skip_scoring(text):
+                    return
+                if pronunciation_score.looks_like_chat(text):
+                    # Still counts as "they answered" — sync picture so the tutor can react without
+                    # mis-scoring chat as the vocabulary token.
+                    lesson.apply_pending_advance()
+                    await publish_tutor_json(
+                        {
+                            "type": "lesson_set_index",
+                            "topicSlug": topic_slug,
+                            "index": lesson.word_index,
+                            "reason": "deferred_advance_chat",
+                        }
+                    )
+                    await refresh_agent_instructions()
+                    logger.debug(
+                        "deferred picture advance applied (conversational reply): %r",
+                        text,
+                    )
+                    return
+                lesson.apply_pending_advance()
+                await publish_tutor_json(
+                    {
+                        "type": "lesson_set_index",
+                        "topicSlug": topic_slug,
+                        "index": lesson.word_index,
+                        "reason": "deferred_advance_attempt",
+                    }
+                )
+                await refresh_agent_instructions()
+                logger.info(
+                    "deferred picture advance applied (attempt) → index %s; scoring same utterance",
+                    lesson.word_index,
+                )
+            else:
+                lesson.pending_advance_to_index = None
+
+        if pronunciation_score.should_skip_scoring(text):
+            return
         expected = lesson.expected_word()
         if not expected:
+            return
+        # Don't score as pronunciation when the child is answering meta prompts such as
+        # "Are you ready?" — plain "yes"/"ok" are handled by should_skip_scoring; phrases
+        # like "yes I'm ready" used to reach score_utterance and could mis-trigger advances.
+        if pronunciation_score.looks_like_readiness_acknowledgment(text, expected):
+            logger.debug(
+                "readiness/meta reply — skipping pronunciation scoring: %r",
+                text,
+            )
             return
         # Only score if it actually looks like an attempt at the lesson word.
         # Conversational chat / questions are passed straight to the LLM untouched.
@@ -616,30 +773,40 @@ async def entrypoint(ctx: JobContext):
         # celebration sentence can flow straight into introducing the next word
         # and the agent's instruction context already reflects the new target.
         advanced = False
+        deferred_next_intro = False
         next_word: str | None = None
         is_last_word = False
         if auto_advance_on_correct and result["band"] == "correct" and lesson.words:
             last_idx = len(lesson.words) - 1
             if lesson.word_index < last_idx:
-                lesson.set_word_index(lesson.word_index + 1)
-                next_word = lesson.expected_word()
-                await publish_tutor_json(
-                    {
-                        "type": "lesson_set_index",
-                        "topicSlug": topic_slug,
-                        "index": lesson.word_index,
-                        "reason": "auto_advance_on_correct",
-                    }
-                )
-                advanced = True
-                # Celebration TTS is a common source of false "user" finals; ignore
-                # scoring briefly while the child might still be silent.
-                _extend_scoring_mute(_post_advance_scoring_mute_s())
-                logger.info(
-                    "auto-advanced lesson to index %s (next word: %s) after correct pronunciation",
-                    lesson.word_index,
-                    next_word,
-                )
+                if defer_picture_until_response:
+                    lesson.pending_advance_to_index = lesson.word_index + 1
+                    next_word = lesson.words[lesson.pending_advance_to_index]
+                    deferred_next_intro = True
+                    _extend_scoring_mute(_post_advance_scoring_mute_s())
+                    logger.info(
+                        "deferring picture to index %s until child speaks (next word: %s)",
+                        lesson.pending_advance_to_index,
+                        next_word,
+                    )
+                else:
+                    lesson.set_word_index(lesson.word_index + 1)
+                    next_word = lesson.expected_word()
+                    await publish_tutor_json(
+                        {
+                            "type": "lesson_set_index",
+                            "topicSlug": topic_slug,
+                            "index": lesson.word_index,
+                            "reason": "auto_advance_on_correct",
+                        }
+                    )
+                    advanced = True
+                    _extend_scoring_mute(_post_advance_scoring_mute_s())
+                    logger.info(
+                        "auto-advanced lesson to index %s (next word: %s) after correct pronunciation",
+                        lesson.word_index,
+                        next_word,
+                    )
             else:
                 is_last_word = True
 
@@ -660,7 +827,7 @@ async def entrypoint(ctx: JobContext):
         # sometimes lose audio entirely after a few rounds.
         needs_scripted_reply = (
             scoring_reply_enabled
-            and (advanced or is_last_word or meta["maxed_out"])
+            and (advanced or deferred_next_intro or is_last_word or meta["maxed_out"])
         )
         if needs_scripted_reply:
             try:
@@ -683,7 +850,17 @@ async def entrypoint(ctx: JobContext):
                         f" Voice energy hint for this turn: {cue.get('emotion', '')} tone, "
                         f"{cue.get('animation', '')} body language (express in voice; UI may show cues)."
                     )
-                if advanced and next_word:
+                if deferred_next_intro and next_word:
+                    transition = (
+                        f" They pronounced \"{expected}\" correctly. The next word is \"{next_word}\". "
+                        "IMPORTANT: The child's picture still shows the previous word until they speak — "
+                        f"celebrate briefly, then invite them to try \"{next_word}\". "
+                        "If they have not answered yet, do NOT skip ahead — ask again in a fun, "
+                        f'encouraging way for "{next_word}". '
+                        "Do NOT call go_to_next_lesson_word or sync_lesson_picture_index; the app moves "
+                        "the picture when the child responds."
+                    )
+                elif advanced and next_word:
                     transition = (
                         f" Then in the SAME short turn, smoothly move on to the next word "
                         f"\"{next_word}\": say it once clearly and ask the child to try it. "
@@ -753,7 +930,7 @@ async def entrypoint(ctx: JobContext):
                 )
         elif scoring_reply_enabled:
             logger.debug(
-                "skipping scripted reply for band=%s (no advance, no max-retry); "
+                "skipping scripted reply for band=%s (no advance/deferred-intro, no max-retry); "
                 "letting realtime model respond naturally",
                 result["band"],
             )
@@ -776,9 +953,17 @@ async def entrypoint(ctx: JobContext):
             msg = json.loads(dp.data.decode("utf-8"))
         except Exception:
             return
-        if msg.get("type") != "lesson_index":
-            return
         if msg.get("topicSlug") and str(msg["topicSlug"]).lower() != topic_slug.lower():
+            return
+        mtype = msg.get("type")
+        if mtype == "child_profile":
+            nonlocal child_name_from_app
+            raw = str(msg.get("childName") or msg.get("name") or "").strip()
+            child_name_from_app = raw[:160]
+            await refresh_agent_instructions()
+            logger.info("child_profile from browser: name=%r (topic=%s)", child_name_from_app, topic_slug)
+            return
+        if mtype != "lesson_index":
             return
         raw_idx = msg.get("index")
         if raw_idx is None:
@@ -799,9 +984,11 @@ async def entrypoint(ctx: JobContext):
         logger.info("lesson index from UI: %s (topic=%s)", lesson.word_index, topic_slug)
 
     def _on_user_input_transcribed(ev: UserInputTranscribedEvent) -> None:
+        t = (ev.transcript or "").strip()
+        if t:
+            asyncio.create_task(publish_input_speech_started_once())
         if not ev.is_final:
             return
-        t = (ev.transcript or "").strip()
         if not t:
             return
         asyncio.create_task(handle_final_transcript(t))
@@ -818,13 +1005,20 @@ async def entrypoint(ctx: JobContext):
     else:
         logger.info("Starting session without bitHuman avatar pipeline")
 
+    # With bitHuman, tutor audio is published by the avatar pipeline — turn off duplicate agent track.
+    # Voice-only (KID_TUTOR_USE_AVATAR=0): we must publish Realtime audio to the room or the child hears nothing.
     await session.start(
         agent=kid_agent,
         room=ctx.room,
         room_options=RoomOptions(
-            audio_output=False,
+            audio_output=not use_avatar,
             audio_input=_kid_room_audio_input_options(),
         ),
+    )
+    logger.info(
+        "AgentSession started: audio published to LiveKit room=%s (use_avatar=%s; set KID_TUTOR_USE_AVATAR=0 for voice-only if you hear no tutor)",
+        not use_avatar,
+        use_avatar,
     )
 
     greeting_sent = False
@@ -841,12 +1035,20 @@ async def entrypoint(ctx: JobContext):
                 return
             greeting_sent = True
         try:
+            cn = (child_name_from_app.strip() or _child_display_name_from_room(ctx.room) or child_display_name)
+            child_hint = ""
+            if cn:
+                child_hint = (
+                    f' The app shows this learner\'s name as "{cn}" for this session — use it in your greeting if natural. '
+                    "If they say a different name, use theirs. Do not invent or substitute a different name."
+                )
             session.generate_reply(
                 instructions=(
                     f"Open the session as {tutor_name}. Speak ONE warm sentence introducing "
                     "yourself by name and welcoming the child to learning time. Then ONE short "
-                    "opener question — pick from: their name, how they're feeling today, or "
+                    "opener question — pick from: how they're feeling today, or "
                     "what they had for breakfast. "
+                    f"If you do not yet know their preferred name from context, you may ask their name gently.{child_hint} "
                     f"Do NOT ask anything related to the lesson topic ({topic}) — for example, "
                     "do NOT ask their favourite colour / animal / number / fruit / shape, and "
                     "do NOT name anything from the picture on their screen. "

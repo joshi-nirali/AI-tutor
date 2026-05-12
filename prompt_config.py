@@ -52,7 +52,9 @@ def reload_prompt_configs() -> None:
     _CACHE.clear()
 
 
-def _lesson_picture_sync_block(prompts: dict[str, Any], fixed_words: list[str]) -> str:
+def _lesson_picture_sync_block(
+    prompts: dict[str, Any], fixed_words: list[str], mode: str = ""
+) -> str:
     if not fixed_words:
         return ""
     lps = prompts.get("lessonPictureSync")
@@ -68,13 +70,23 @@ def _lesson_picture_sync_block(prompts: dict[str, Any], fixed_words: list[str]) 
     ]
     if isinstance(ex, str) and ex.strip():
         parts.append(f"Example: {ex.strip()}")
+    if mode == "quiz":
+        parts.append(
+            "Quiz mode: each question must match the picture currently shown — call the tool as you switch "
+            "to the next word so you never ask about a lion while the child still sees a banana."
+        )
     return "\n".join(parts) + "\n"
 
 
-def _fixed_word_list_block(words: list[str]) -> str:
+def _fixed_word_list_block(words: list[str], mode: str = "") -> str:
     if not words:
         return ""
     numbered = "\n".join(f"{i + 1}. {w}" for i, w in enumerate(words))
+    quiz_extra = ""
+    if mode == "quiz":
+        quiz_extra = """
+- **Quiz mode only:** The big picture on the child's screen always matches the **current** list word (same order as above). Every quiz question must be about **that** picture — colors, sounds, where it lives, what it does, silly either/or, size, or \"what letter does it start with?\". Do not ask about another word from the list until you have moved the on-screen picture to that word (use the lesson picture tools when you change words).
+"""
     return f"""
 
 FIXED WORD LIST for this session (only use these as lesson vocabulary / quiz targets / speaking practice words; in this order):
@@ -86,7 +98,7 @@ Rules for this list:
 - In quiz and speaking modes, only ask about words from this list.
 - If the child asks about something off-list, answer in one short sentence if helpful, then gently return to the current list word.
 - After the last word, celebrate, then offer to revisit a favorite or end the lesson.
-- The child's screen shows a large picture for the word they are on (when the lesson has images). Ask them to look at the picture, then connect it to the word (e.g. "This is a banana — can you say banana?")."""
+- The child's screen shows a large picture for the word they are on (when the lesson has images). Ask them to look at the picture, then connect it to the word (e.g. "This is a banana — can you say banana?").{quiz_extra}"""
 
 
 def _format_pair_block(title: str, obj: Any) -> str:
@@ -267,8 +279,8 @@ Never produce a sentence like "let's slow down and speak banana" unless the chil
     examples = _build_response_style_examples(templates) if templates else ""
     policy = _build_pronunciation_policy(pron_rules) if pron_rules else ""
 
-    fixed_block = _fixed_word_list_block(fixed_words)
-    picture_sync_block = _lesson_picture_sync_block(prompts, fixed_words)
+    fixed_block = _fixed_word_list_block(fixed_words, mode)
+    picture_sync_block = _lesson_picture_sync_block(prompts, fixed_words, mode)
 
     if mode == "vocabulary":
         mode_block = """
@@ -293,10 +305,14 @@ Focus on pronunciation and repeating.
     elif mode == "quiz":
         mode_block = """
 
-Mode: QUIZ
-- Ask short questions (choices are easier than open-ended).
-- After an answer, say if it is correct in a fun way, or encourage and teach.
-- Mix easy wins with one slightly harder question."""
+Mode: QUIZ — picture quiz on the current word
+The child sees **one big image** at a time; it always matches the **current word** from the fixed list (same order). Treat every turn like a mini game show about **what is on screen right now**.
+
+- Point at the picture in words: e.g. \"On your screen, do you see the elephant?\", \"Let's peek at our picture — hmm, what color is it?\", \"Does this animal live on a farm or in the jungle?\"
+- Ask **fun**, kid-sized questions **only** about that object/animal/thing: color, sound, size, food, home/habitat, number of legs, silly this-or-that, or a rhyming teaser — never a boring spelling test unless you make it a silly chant.
+- One or two short questions per turn is enough; keep answers upbeat (\"Nice guess!\", \"Ooh, thinking cap on!\") and never say \"wrong\" — reframe as a playful hint tied to the image.
+- Stay on this picture/word until you are done quizzing it; **then** call go_to_next_lesson_word (or sync_lesson_picture_index) **before** you start asking about the next word so the image and your question always match.
+- Mix super-easy wins with one slightly trickier question **still about the same picture**."""
     else:
         mode_block = ""
 

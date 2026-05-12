@@ -1,9 +1,10 @@
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
   StartAudio,
   useLocalParticipant,
+  useMaybeRoomContext,
   useParticipantTracks,
   useParticipants,
   useRoomContext,
@@ -15,6 +16,14 @@ import { ConnectionState, RoomEvent, Track } from "livekit-client";
 import "@livekit/components-styles";
 import TutorLiveStatus from "./TutorLiveStatus";
 import LessonPicturePanel, { curriculumApiBase } from "./LessonPicturePanel";
+
+const KID_TUTOR_DATA_TOPIC = "kidtutor";
+
+/** Hard cap if nothing dismisses the loader (keep reasonable — was 45s and felt stuck). */
+const AVATAR_SETUP_LOADER_MAX_MS = 16000;
+
+/** After LiveKit is connected and at least one remote participant joins (agent / avatar), hide loader. */
+const AVATAR_SETUP_DISMISS_AFTER_AGENT_MS = 4000;
 
 /** Browser mic processing: cuts fan/room noise; echo cancellation helps laptop speakers. */
 const KID_MIC_CAPTURE_OPTIONS = {
@@ -48,6 +57,42 @@ function useRemoteParticipantsFromRoom() {
   return useMemo(() => all.filter((p) => !p.isLocal), [all]);
 }
 
+/**
+ * Sends the name from the home screen to the agent so one device can serve many kids reliably.
+ * Retries once so the message arrives after the agent subscribes to data.
+ */
+function PublishChildProfile({ topicSlug, childName }) {
+  const room = useMaybeRoomContext();
+  const encRef = useRef(typeof TextEncoder !== "undefined" ? new TextEncoder() : null);
+
+  useEffect(() => {
+    if (!room || room.state !== ConnectionState.Connected) return undefined;
+    const enc = encRef.current;
+    if (!enc) return undefined;
+    const raw = (childName || "").trim();
+    if (!raw) return undefined;
+
+    const publish = () => {
+      const payload = enc.encode(
+        JSON.stringify({
+          type: "child_profile",
+          topicSlug,
+          childName: raw,
+        })
+      );
+      room.localParticipant
+        .publishData(payload, { reliable: true, topic: KID_TUTOR_DATA_TOPIC })
+        .catch(() => {});
+    };
+
+    publish();
+    const retry = window.setTimeout(publish, 900);
+    return () => window.clearTimeout(retry);
+  }, [room, room.state, topicSlug, childName]);
+
+  return null;
+}
+
 /** Kid flow: browser may allow the mic OS-wide but LiveKit still starts muted — publish on connect. */
 function TutorEnableMicOnConnect() {
   const room = useRoomContext();
@@ -65,6 +110,78 @@ function TutorEnableMicOnConnect() {
     };
   }, [room]);
   return null;
+}
+
+/**
+ * Full-screen overlay until any of:
+ *   - Agent sends input_speech_started (first STT from child), or
+ *   - Room is connected + a remote participant is present for AVATAR_SETUP_DISMISS_AFTER_AGENT_MS
+ *     (agent joined — no need to wait for speech), or
+ *   - AVATAR_SETUP_LOADER_MAX_MS safety cap.
+ * Content stays mounted; overlay uses pointer-events: none so taps reach StartAudio under it.
+ */
+function TutorAvatarSetupGate({ tutorLabel, topicSlug, show, onDismiss }) {
+  const room = useMaybeRoomContext();
+  const participants = useParticipants();
+  const remoteParticipantCount = useMemo(
+    () => participants.filter((p) => !p.isLocal).length,
+    [participants]
+  );
+
+  useEffect(() => {
+    if (!show || !room) return undefined;
+
+    const maxId = window.setTimeout(onDismiss, AVATAR_SETUP_LOADER_MAX_MS);
+
+    const onData = (payload, participant, _kind, topic) => {
+      if (topic !== KID_TUTOR_DATA_TOPIC) return;
+      if (!participant || participant.isLocal) return;
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(payload));
+        if (msg.type !== "input_speech_started") return;
+        if (msg.topicSlug && topicSlug && msg.topicSlug !== topicSlug) return;
+        onDismiss();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, onData);
+    return () => {
+      window.clearTimeout(maxId);
+      room.off(RoomEvent.DataReceived, onData);
+    };
+  }, [show, room, topicSlug, onDismiss]);
+
+  useEffect(() => {
+    if (!show || !room) return undefined;
+    if (room.state !== ConnectionState.Connected) return undefined;
+    if (remoteParticipantCount < 1) return undefined;
+    const id = window.setTimeout(onDismiss, AVATAR_SETUP_DISMISS_AFTER_AGENT_MS);
+    return () => window.clearTimeout(id);
+  }, [show, room, remoteParticipantCount, onDismiss]);
+
+  if (!show) return null;
+
+  return (
+    <div
+      className="tutor-avatar-setup-overlay"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-labelledby="tutor-avatar-setup-heading"
+    >
+      <div className="tutor-avatar-setup-card">
+        <div className="tutor-avatar-setup-spinner" aria-hidden />
+        <p id="tutor-avatar-setup-heading" className="tutor-avatar-setup-title">
+          Getting {tutorLabel} ready…
+        </p>
+        <p className="tutor-avatar-setup-sub">
+          This clears when your tutor joins or when you say hi — allow the mic if asked.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 /** One participant + camera/screen tile; needs a stable `participant` (rules of hooks). */
@@ -170,6 +287,7 @@ export default function TutorRoom({
 }) {
   const [connect, setConnect] = useState(false);
   const [error, setError] = useState(null);
+  const [showSetupLoader, setShowSetupLoader] = useState(true);
 
   const slug = (tutorSlug || "leo").toLowerCase().replace(/[^a-z0-9_]/g, "") || "leo";
 
@@ -187,6 +305,10 @@ export default function TutorRoom({
   const [serverUrl, setServerUrl] = useState(livekitUrl || null);
 
   const curriculumBase = useMemo(() => curriculumApiBase(tokenBaseUrl), [tokenBaseUrl]);
+
+  const dismissSetupLoader = useCallback(() => {
+    setShowSetupLoader(false);
+  }, []);
 
   const fetchToken = useCallback(async () => {
     setError(null);
@@ -286,7 +408,19 @@ export default function TutorRoom({
       className="tutor-livekit-root"
     >
       <TutorEnableMicOnConnect />
-      <div className="tutor-livekit-inner tutor-livekit-inner--session">
+      <PublishChildProfile topicSlug={topicSlug} childName={childName} />
+      <TutorAvatarSetupGate
+        tutorLabel={tutorLabel}
+        topicSlug={topicSlug}
+        show={showSetupLoader}
+        onDismiss={dismissSetupLoader}
+      />
+      <div
+        className={`tutor-livekit-inner tutor-livekit-inner--session${
+          showSetupLoader ? " tutor-livekit-inner--setup-pending" : ""
+        }`}
+        aria-hidden={showSetupLoader}
+      >
         <header className="tutor-session-header">
           <button type="button" className="tutor-session-back" onClick={onLeave} aria-label="Leave lesson">
             <span aria-hidden>‹</span>

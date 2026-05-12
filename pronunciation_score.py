@@ -130,6 +130,150 @@ def should_skip_scoring(transcript: str) -> bool:
     return False
 
 
+# Tokens common in "Are you ready?" / "Let's start!"–style replies — not lesson vocabulary.
+_READINESS_FILLER_TOKENS: frozenset[str] = frozenset(
+    {
+        "yes",
+        "no",
+        "ok",
+        "okay",
+        "yeah",
+        "yep",
+        "yup",
+        "nah",
+        "sure",
+        "alright",
+        "right",
+        "ready",
+        "im",
+        "ill",
+        "mhm",
+        "uh",
+        "um",
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "bye",
+        "good",
+        "fine",
+        "great",
+        "cool",
+        "nice",
+        "am",
+        "are",
+        "we",
+        "i",
+        "you",
+        "it",
+        "is",
+        "do",
+        "did",
+        "can",
+        "will",
+        "here",
+        "go",
+        "come",
+        "on",
+        "let",
+        "lets",
+        "start",
+        "starting",
+        "please",
+    }
+)
+
+
+def _phrase_key(transcript: str) -> str:
+    """Lowercase letters/digits only, single spaces — for comparing fixed readiness phrases."""
+    t = re.sub(r"[^a-z0-9\s]+", " ", (transcript or "").lower())
+    return re.sub(r"\s+", " ", t).strip()
+
+
+# Normalized multi-word replies that are never a pronunciation attempt at the lesson word.
+_READINESS_PHRASE_KEYS: frozenset[str] = frozenset(
+    {
+        _phrase_key(p)
+        for p in (
+            "yes i'm ready",
+            "yes im ready",
+            "yeah i'm ready",
+            "yeah im ready",
+            "ok i'm ready",
+            "ok im ready",
+            "i'm ready",
+            "im ready",
+            "we're ready",
+            "were ready",
+            "i am ready",
+            "we are ready",
+            "yes let's go",
+            "yeah let's go",
+            "ok let's go",
+            "lets go",
+            "let's go",
+            "ok lets go",
+            "yes lets go",
+            "ready",
+            "i'm here",
+            "im here",
+            "here i am",
+            "we can start",
+            "i can do it",
+            "sure thing",
+        )
+    }
+)
+
+# Flexible patterns: affirmation + optional "I'm" + optional "ready/here", etc.
+_READINESS_ACK_RE = re.compile(
+    r"^\s*(yes|yeah|yep|yup|ok|okay|sure|alright|right|mhm|uh[\s\-]?huh)" r"(\s+(i['\s]?m|i\s+am|we['\s]?re))?" r"\s*(ready|here)?\s*[.!?…]*\s*$",
+    re.IGNORECASE | re.VERBOSE,
+)
+_STANDALONE_READY_RE = re.compile(r"^\s*ready\s*[.!?…]*\s*$", re.IGNORECASE)
+_LETS_GO_RE = re.compile(
+    r"^\s*(ok|yes|yeah)?\s*(let['\s]s)\s+go\s*[.!?…]*\s*$",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def looks_like_readiness_acknowledgment(transcript: str, expected: str) -> bool:
+    """True if this sounds like answering \"ready?\" / \"shall we start?\" — not practicing the target word.
+
+    If the child clearly includes the lesson ``expected`` word (normalized token match), returns False
+    so normal scoring can run.
+    """
+    exp = _normalize_word(expected or "")
+    if not (transcript or "").strip():
+        return True
+
+    raw_tokens = _tokens(transcript)
+    norm_tokens = [_normalize_word(t) for t in raw_tokens if _normalize_word(t)]
+
+    # Child said the target word — treat as an attempt even among fillers ("yes banana").
+    if exp and exp in norm_tokens:
+        return False
+
+    key = _phrase_key(transcript)
+    if key in _READINESS_PHRASE_KEYS:
+        return True
+
+    if _READINESS_ACK_RE.match((transcript or "").strip()):
+        return True
+    if _LETS_GO_RE.match((transcript or "").strip()):
+        return True
+
+    # Standalone "ready" is usually answering the tutor — unless the vocabulary word is literally "ready".
+    if exp != "ready" and _STANDALONE_READY_RE.match((transcript or "").strip()):
+        return True
+
+    # Only short replies: every token is a filler/ack — not a attempt at a content word.
+    if norm_tokens and len(norm_tokens) <= 6 and all(t in _READINESS_FILLER_TOKENS for t in norm_tokens):
+        return True
+
+    return False
+
+
 def score_utterance(expected: str, transcript: str, thresholds: dict[str, Any]) -> dict[str, Any]:
     """
     Return score 0-100, band correct|almost|incorrect, and best matching token from transcript.
