@@ -1199,12 +1199,50 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  --tutor-lk-control-btn-height: 2.75rem;
+  --tutor-lk-control-btn-min-width: 8.25rem;
 }
 
-.tutor-avatar-video-shell .lk-button-group {
-  flex-wrap: wrap;
+/* Mic + Leave should match height/width — LiveKit styles leave smaller by default. */
+.tutor-avatar-video-shell .lk-control-bar .lk-button,
+.tutor-avatar-video-shell .lk-control-bar .lk-disconnect-button {
+  min-height: var(--tutor-lk-control-btn-height);
+  height: var(--tutor-lk-control-btn-height);
+  min-width: var(--tutor-lk-control-btn-min-width);
+  padding: 0 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  box-sizing: border-box;
+}
+
+.tutor-avatar-video-shell .lk-control-bar .lk-disconnect-button {
+  width: var(--tutor-lk-control-btn-min-width);
+}
+
+.tutor-avatar-video-shell .lk-control-bar .lk-button-group {
+  flex-wrap: nowrap;
   justify-content: center;
   max-width: 100%;
+  min-height: var(--tutor-lk-control-btn-height);
+  height: var(--tutor-lk-control-btn-height);
+  min-width: var(--tutor-lk-control-btn-min-width);
+}
+
+.tutor-avatar-video-shell .lk-control-bar .lk-button-group > .lk-button {
+  min-height: 100%;
+  height: 100%;
+}
+
+.tutor-avatar-video-shell .lk-control-bar .lk-button-group-menu {
+  min-height: var(--tutor-lk-control-btn-height);
+  height: var(--tutor-lk-control-btn-height);
+  display: inline-flex;
+  align-items: stretch;
 }
 
 .tutor-avatar-video-shell .lk-device-menu {

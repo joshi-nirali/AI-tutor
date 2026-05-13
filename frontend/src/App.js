@@ -13,14 +13,14 @@ const AVATARS = [
     quote: "Roar! I'm Leo. Let's learn and play together!",
     ring: "lavender",
   },
-  {
-    id: "luna",
-    emoji: "🦉",
-    name: "Luna",
-    blurb: "Patient with sounds",
-    quote: "Hoot! I'll help you with every sound.",
-    ring: "mint",
-  },
+  // {
+  //   id: "luna",
+  //   emoji: "🦉",
+  //   name: "Luna",
+  //   blurb: "Patient with sounds",
+  //   quote: "Hoot! I'll help you with every sound.",
+  //   ring: "mint",
+  // },
   {
     id: "cub",
     emoji: "🐆",
@@ -158,12 +158,12 @@ export default function App() {
             </span>
             <span className="kid-appbar-title">Leo&apos;s Learning</span>
           </div>
-          <button type="button" className="kid-appbar-parents" onClick={scrollToParentNote}>
+          {/* <button type="button" className="kid-appbar-parents" onClick={scrollToParentNote}>
             <span className="kid-appbar-gear" aria-hidden>
               ⚙
             </span>
             Parents
-          </button>
+          </button> */}
         </nav>
 
         {screen === "name" && (
@@ -296,12 +296,12 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <div className="kid-level-pill" role="status">
+            {/* <div className="kid-level-pill" role="status">
               <span className="kid-level-stars" aria-hidden>
                 ☆☆
               </span>
               Level 1 — keep going!
-            </div>
+            </div> */}
             <div className="kid-footer-actions">
               <button
                 type="button"

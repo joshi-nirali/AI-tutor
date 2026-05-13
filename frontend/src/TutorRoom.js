@@ -247,7 +247,13 @@ function TutorAvatarBlock({ tutorLabel }) {
                 </div>
               </div>
               <ControlBar
-                controls={{ microphone: true, camera: true, screenShare: true, chat: true, leave: true }}
+                controls={{
+                  microphone: true,
+                  camera: false,
+                  screenShare: false,
+                  chat: false,
+                  leave: true,
+                }}
               />
             </div>
           </LayoutContextProvider>
@@ -432,8 +438,8 @@ export default function TutorRoom({
             <span>Leo&apos;s Learning</span>
           </div>
           <div className="tutor-session-header-meta" aria-hidden>
-            <span className="tutor-session-level">Level 1</span>
-            <span className="tutor-session-level-stars">★☆</span>
+            {/* <span className="tutor-session-level">Level 1</span>
+            <span className="tutor-session-level-stars">★☆</span> */}
           </div>
         </header>
         <TutorLiveStatus tutorLabel={tutorLabel} />
