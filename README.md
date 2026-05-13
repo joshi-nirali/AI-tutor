@@ -2,6 +2,8 @@
 
 Voice lesson app for young children: **React** (browser) joins a **LiveKit** room, a **Python agent** runs **OpenAI Realtime** speech, and optionally **bitHuman** publishes the talking avatar video. A small **token server** mints room JWTs and serves curriculum images.
 
+**How the full flow works (plain language):** see [WORKFLOW.md](WORKFLOW.md). **Flowchart (HTML):** open [WORKFLOW_DIAGRAM.html](WORKFLOW_DIAGRAM.html) in a browser.
+
 ---
 
 ## What you run locally
