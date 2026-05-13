@@ -651,6 +651,15 @@ async def entrypoint(ctx: JobContext):
         if not lesson_started:
             # First real utterance after the greeting. Treat it as the greeting reply,
             # never as a pronunciation attempt, and use it to launch the lesson.
+            # BUT: if the child is just saying "Yep I'm ready" / "Yes" / "I'm ready"
+            # in response to a (forbidden but sometimes generated) readiness question,
+            # do NOT treat that as the trigger — wait for a real conversational reply.
+            expected_word_0 = lesson.expected_word() if lesson.words else ""
+            if pronunciation_score.looks_like_readiness_acknowledgment(text, expected_word_0):
+                logger.debug(
+                    "greeting readiness reply — not triggering lesson transition: %r", text
+                )
+                return
             await transition_into_lesson("first_child_utterance")
             return
         if scoring_mute_until is not None:
@@ -1053,6 +1062,9 @@ async def entrypoint(ctx: JobContext):
                     "do NOT ask their favourite colour / animal / number / fruit / shape, and "
                     "do NOT name anything from the picture on their screen. "
                     "Do NOT mention any vocabulary word and do NOT ask them to repeat anything yet. "
+                    "CRITICAL: Do NOT ask 'Are you ready?', 'Ready to learn?', 'Shall we start?', "
+                    "'Ready for fun?', or ANY yes/no question about starting — these cause the lesson "
+                    "to skip the first word. Ask ONLY about feelings or breakfast. "
                     "Wait for them to reply."
                 ),
             )
