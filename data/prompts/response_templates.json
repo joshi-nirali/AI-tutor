@@ -1,0 +1,171 @@
+{
+  "version": "2.0",
+  "correctResponses": [
+    {
+      "text": "Yaay! That was PERFECT!",
+      "emotion": "overjoyed",
+      "animation": "jump_celebrate"
+    },
+    {
+      "text": "WOW! You said it like a PRO!",
+      "emotion": "amazed",
+      "animation": "big_clap"
+    },
+    {
+      "text": "roar! That was AMAZING!",
+      "emotion": "ecstatic",
+      "animation": "celebrate"
+    },
+    {
+      "text": "Oh my goodness, PERFECT! High five!",
+      "emotion": "thrilled",
+      "animation": "high_five"
+    },
+    {
+      "text": "YES YES YES! You are a SUPERSTAR!",
+      "emotion": "overjoyed",
+      "animation": "dance"
+    }
+  ],
+  "almostCorrectResponses": [
+    {
+      "text": "Ooo, SO close! One more try!",
+      "emotion": "excited_encouraging",
+      "animation": "lean_forward"
+    },
+    {
+      "text": "Almost there! You're doing great!",
+      "emotion": "warm_encouraging",
+      "animation": "thumbs_up"
+    },
+    {
+      "text": "Ooh, nearly perfect! Try once more!",
+      "emotion": "playful_suspense",
+      "animation": "nod"
+    },
+    {
+      "text": "Hey, that was really good! Tiny fix!",
+      "emotion": "supportive",
+      "animation": "gentle_point"
+    },
+    {
+      "text": "WOW, so close! I believe in you!",
+      "emotion": "cheerful",
+      "animation": "clap_slow"
+    }
+  ],
+  "incorrectResponses": [
+    {
+      "text": "No worries! Let's try together!",
+      "emotion": "gentle",
+      "animation": "open_arms"
+    },
+    {
+      "text": "Hey, that's okay! Let me help!",
+      "emotion": "warm",
+      "animation": "lean_in"
+    },
+    {
+      "text": "Hmm, tricky one! Let's go slow.",
+      "emotion": "curious",
+      "animation": "thinking"
+    },
+    {
+      "text": "Let's break it into pieces! Ready?",
+      "emotion": "playful",
+      "animation": "counting"
+    },
+    {
+      "text": "Oopsie! Let's figure it out together!",
+      "emotion": "silly",
+      "animation": "shrug_smile"
+    }
+  ],
+  "teachingPrompts": [
+    {
+      "text": "Listen to this! Ready? Here it comes!",
+      "emotion": "excited",
+      "animation": "cupping_ear"
+    },
+    {
+      "text": "Oooh, new word time! This is a fun one!",
+      "emotion": "thrilled",
+      "animation": "reveal"
+    },
+    {
+      "text": "Okay okay okay, check THIS out!",
+      "emotion": "hyped",
+      "animation": "drumroll"
+    },
+    {
+      "text": "Watch and listen carefully, here we go!",
+      "emotion": "focused_fun",
+      "animation": "spotlight"
+    }
+  ],
+  "retryPrompts": [
+    {
+      "text": "One more time! You've GOT this!",
+      "emotion": "determined",
+      "animation": "fist_pump"
+    },
+    {
+      "text": "Try again, nice and slow!",
+      "emotion": "patient",
+      "animation": "slow_down"
+    },
+    {
+      "text": "Let's do it together — ready, set, GO!",
+      "emotion": "playful",
+      "animation": "countdown"
+    }
+  ],
+  "lessonTransitions": [
+    {
+      "text": "Ooooh, guess what's NEXT?!",
+      "emotion": "suspenseful",
+      "animation": "peek"
+    },
+    {
+      "text": "Ready for another adventure?",
+      "emotion": "excited",
+      "animation": "wave_forward"
+    },
+    {
+      "text": "Next word coming in 3... 2... 1!",
+      "emotion": "dramatic",
+      "animation": "countdown"
+    }
+  ],
+  "lessonCompletion": [
+    {
+      "text": "You did it! ALL the words! AMAZING!",
+      "emotion": "proud",
+      "animation": "fireworks"
+    },
+    {
+      "text": "WOW! Lesson complete! You're a CHAMPION!",
+      "emotion": "ecstatic",
+      "animation": "trophy"
+    },
+    {
+      "text": "I'm SO proud of you! That was incredible!",
+      "emotion": "heartfelt",
+      "animation": "heart"
+    }
+  ],
+  "systemPrompts": [
+    {
+      "text": "I'm listening with my BIG ears!",
+      "state": "listening"
+    },
+    {
+      "text": "Hmm, my brain is buzzing!",
+      "state": "thinking"
+    },
+    {
+      "text": "Your turn! Go ahead!",
+      "state": "waiting"
+    }
+  ]
+}

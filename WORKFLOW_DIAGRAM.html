@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Essence Cloud Kid Tutor — System Flow</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        primaryColor: "#e8f4fc",
+        primaryTextColor: "#1a1a2e",
+        primaryBorderColor: "#3d7ea6",
+        lineColor: "#5a6a7a",
+        secondaryColor: "#f0f7ee",
+        tertiaryColor: "#fff8e6",
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+        fontSize: "15px",
+      },
+      flowchart: {
+        htmlLabels: true,
+        curve: "basis",
+        padding: 16,
+        nodeSpacing: 40,
+        rankSpacing: 50,
+      },
+    });
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: #1a1a2e;
+      background: linear-gradient(160deg, #f6f9fc 0%, #eef2f7 100%);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 3rem;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: #4a5568;
+      font-size: 1rem;
+      max-width: 42rem;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(26, 26, 46, 0.08);
+      padding: 1.5rem 1rem 2rem;
+      overflow-x: auto;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 1.5rem;
+      font-size: 0.875rem;
+      color: #4a5568;
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot--user { background: #e8f4fc; border: 2px solid #3d7ea6; }
+    .dot--app { background: #f0f7ee; border: 2px solid #5a9e4b; }
+    .dot--cloud { background: #fff8e6; border: 2px solid #c9a227; }
+    footer {
+      text-align: center;
+      margin-top: 1.5rem;
+      font-size: 0.8rem;
+      color: #718096;
+    }
+    @media print {
+      body { background: #fff; }
+      .card { box-shadow: none; border: 1px solid #ddd; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Essence Cloud — Kid Tutor Flow</h1>
+      <p class="subtitle">
+        End-to-end flow: child uses the React app, joins a LiveKit room, and the Python agent
+        runs the AI tutor (OpenAI Realtime, optional BitHuman avatar) while lesson pictures stay in sync.
+      </p>
+    </header>
+
+    <div class="card">
+      <pre class="mermaid">
+flowchart TD
+    subgraph USER["👤 Child / parent"]
+        A([Open app in browser])
+        B[Enter name, pick tutor, mode &amp; theme]
+        C[Tap Start lesson]
+        D[Allow microphone]
+        E[See tutor + lesson picture]
+        F[Speak answers]
+        G([Leave or lesson complete])
+    end
+
+    subgraph BROWSER["🖥️ React app — frontend/"]
+        H[Build room name<br/>kidtutor-mode-topic-tutor-id]
+        I[GET /token]
+        J[Join LiveKit room]
+        K[Show picture carousel<br/>word index 0, 1, 2…]
+        L[Publish child_profile<br/>on data channel]
+        M[Listen: lesson_set_index,<br/>pronunciation_result, lesson_complete]
+    end
+
+    subgraph TOKEN["🔑 Token server — token_server.py"]
+        N[Validate room name]
+        O[Return JWT + LiveKit URL]
+        P[Serve curriculum images]
+    end
+
+    subgraph LIVEKIT["📡 LiveKit cloud room"]
+        Q[Real-time audio / video tracks]
+        R[Data channel topic: kidtutor]
+    end
+
+    subgraph AGENT["🤖 Python agent — agent.py"]
+        S[Worker joins room]
+        T[Parse room → mode, topic, tutor]
+        U[Load word list &amp; AI prompts]
+        V[Start OpenAI Realtime voice]
+        W{Avatar enabled?}
+        X[BitHuman avatar video]
+        Y[Greeting: intro + opener question]
+        Z[Child replies → start lesson]
+        AA{Lesson mode?}
+        AB[Vocabulary / Speaking<br/>score pronunciation]
+        AC[Quiz<br/>questions about current picture]
+        AD[Sync picture index<br/>lesson_set_index / tools]
+        AE{More words?}
+        AF[Signal lesson_complete]
+    end
+
+    A --> B --> C
+    C --> H --> I
+    I --> N
+    N --> O
+    O --> J
+    C --> D
+    J --> Q
+    J --> K
+    J --> L
+    L --> R
+    P --> K
+
+    Q --> S
+    S --> T --> U --> V --> W
+    W -->|Yes| X --> Y
+    W -->|No voice-only| Y
+    X --> Q
+    V --> Q
+
+    Y --> E
+    E --> F
+    F --> Q
+    Q --> Z
+    Z --> AA
+    AA -->|vocabulary / speaking| AB
+    AA -->|quiz| AC
+    AB --> AD
+    AC --> AD
+    AD --> M
+    M --> K
+    AD --> AE
+    AE -->|Yes| AA
+    AE -->|No| AF
+    AF --> G
+
+    R <-->|JSON messages| M
+    R <-->|JSON messages| AD
+
+    style USER fill:#f8fafc,stroke:#3d7ea6
+    style BROWSER fill:#f0fdf4,stroke:#5a9e4b
+    style TOKEN fill:#fffbeb,stroke:#c9a227
+    style LIVEKIT fill:#f5f3ff,stroke:#7c6bb8
+    style AGENT fill:#eff6ff,stroke:#2563eb
+      </pre>
+    </div>
+
+    <div class="legend">
+      <span><span class="dot dot--user"></span> User actions</span>
+      <span><span class="dot dot--app"></span> Browser / React</span>
+      <span><span class="dot dot--cloud"></span> Backend &amp; LiveKit</span>
+    </div>
+
+    <footer>
+      Essence Cloud · See <code>WORKFLOW.md</code> for the written guide · Open this file in a browser (internet required for Mermaid.js) or print to PDF
+    </footer>
+  </div>
+</body>
+</html>
