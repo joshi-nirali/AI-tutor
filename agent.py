@@ -80,7 +80,7 @@ from livekit.agents import (
 )
 from livekit.agents.voice import io as agent_io
 from livekit.agents.voice.room_io import AudioInputOptions, RoomOptions
-from livekit.plugins import bithuman, cartesia, openai, silero
+from livekit.plugins import bithuman, cartesia, deepgram, openai, silero
 
 from curriculum import words_for_topic
 from kid_lesson_session import KidLessonSession
@@ -345,39 +345,41 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
 
 
 def _build_agent_session(*, tutor_slug: str, use_avatar: bool) -> AgentSession:
-    """Cartesia Ink STT + Sonic TTS; OpenAI chat LLM for reasoning and tools."""
+    """Deepgram Nova-3 STT + Cartesia Sonic TTS; OpenAI chat LLM for reasoning and tools."""
     if not (os.getenv("CARTESIA_API_KEY") or "").strip():
         raise ValueError(
-            "CARTESIA_API_KEY is required — all speech uses Cartesia (Ink STT + Sonic TTS). "
+            "CARTESIA_API_KEY is required — tutor voice uses Cartesia Sonic TTS. "
             "Create a key at https://play.cartesia.ai"
         )
-    stt_model = (os.getenv("CARTESIA_STT_MODEL", "ink-whisper") or "ink-whisper").strip()
+    deepgram_api_key = (os.getenv("DEEPGRAM_API_KEY") or "").strip()
+    if not deepgram_api_key:
+        raise ValueError(
+            "DEEPGRAM_API_KEY is required — child speech uses Deepgram Nova-3 STT. "
+            "Create a key at https://console.deepgram.com"
+        )
     tts_model = (os.getenv("CARTESIA_TTS_MODEL", "sonic-3") or "sonic-3").strip()
     stt_language = (os.getenv("CARTESIA_STT_LANGUAGE", "en") or "en").strip()
+    deepgram_model = (os.getenv("DEEPGRAM_STT_MODEL", "nova-3") or "nova-3").strip()
     cartesia_voice = _cartesia_voice_for_tutor(tutor_slug)
     llm_model = (os.getenv("OPENAI_LLM_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").strip()
     if "realtime" in llm_model.lower():
         raise ValueError(
             f"OPENAI_LLM_MODEL={llm_model!r} is a Realtime speech model, not a chat completions model. "
-            "With Cartesia STT/TTS, set OPENAI_LLM_MODEL to a chat model (e.g. gpt-4.1-mini, gpt-4o-mini)."
+            "Set OPENAI_LLM_MODEL to a chat model (e.g. gpt-4.1-mini, gpt-4o-mini)."
         )
     logger.info(
-        "Voice pipeline: Cartesia STT model=%s language=%s | TTS model=%s voice=%s | OpenAI chat LLM=%s",
-        stt_model,
+        "Voice pipeline: Deepgram STT model=%s language=%s | Cartesia TTS model=%s voice=%s | OpenAI LLM=%s",
+        deepgram_model,
         stt_language,
         tts_model,
         cartesia_voice,
         llm_model,
     )
-    logger.info(
-        "Cartesia note: speaking timbre is TTS model + voice UUID above; "
-        "CARTESIA_STT_MODEL only affects how child speech is transcribed (not tutor voice)."
-    )
     th = _kid_tutor_turn_handling(use_avatar=use_avatar)
     if th:
         logger.info("AgentSession turn_handling override: %s", th)
     kwargs: dict = {
-        "stt": cartesia.STT(model=stt_model, language=stt_language),
+        "stt": deepgram.STT(model=deepgram_model, language=stt_language),
         "llm": openai.LLM(model=llm_model),
         "tts": cartesia.TTS(model=tts_model, voice=cartesia_voice),
         "vad": silero.VAD.load(),
