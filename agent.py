@@ -101,10 +101,19 @@ logger.setLevel(logging.INFO)
 # Requires at least 3 letters to avoid clobbering "A-Z", "x-y" axis labels, etc.
 _LETTER_SPELL_RE = re.compile(r"\b([A-Za-z])(?:[-\s]+[A-Za-z]){2,}\b")
 
+# ALL-CAPS words (2+ letters): Cartesia reads them as acronyms ("R-O-A-R").
+# Convert to lowercase so TTS says the word aloud.
+_ALL_CAPS_RE = re.compile(r"\b[A-Z]{2,}\b")
 
-def _fix_letter_spelling(text: str) -> str:
-    """Collapse letter-by-letter spellings to the full word so TTS says 'roar' not 'R O A R'."""
-    return _LETTER_SPELL_RE.sub(lambda m: re.sub(r"[-\s]+", "", m.group(0)).lower(), text)
+
+def _fix_tts_text(text: str) -> str:
+    """Fix two TTS problems:
+    1. 'R O A R' (spaced letters) → 'roar'
+    2. 'ROAAAR' (all-caps word) → 'roaaar'  so Cartesia speaks the word, not each letter
+    """
+    text = _LETTER_SPELL_RE.sub(lambda m: re.sub(r"[-\s]+", "", m.group(0)).lower(), text)
+    text = _ALL_CAPS_RE.sub(lambda m: m.group(0).lower(), text)
+    return text
 
 
 class _KidTutorAgent(Agent):
@@ -112,10 +121,22 @@ class _KidTutorAgent(Agent):
 
     def tts_node(self, text, model_settings):
         async def _filtered():
+            buffer = ""
             async for chunk in text:
-                fixed = _fix_letter_spelling(chunk)
-                if fixed != chunk:
-                    logger.debug("tts text fix: %r → %r", chunk, fixed)
+                logger.info("tts_chunk raw: %r", chunk)
+                buffer += chunk
+                # Flush on sentence boundary or when buffer grows large
+                if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 200:
+                    fixed = _fix_tts_text(buffer)
+                    if fixed != buffer:
+                        logger.info("tts fix applied: %r → %r", buffer.strip(), fixed.strip())
+                    yield fixed
+                    buffer = ""
+            # Flush any remaining text
+            if buffer:
+                fixed = _fix_tts_text(buffer)
+                if fixed != buffer:
+                    logger.info("tts fix applied: %r → %r", buffer.strip(), fixed.strip())
                 yield fixed
 
         return Agent.default.tts_node(self, _filtered(), model_settings)

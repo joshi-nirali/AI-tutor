@@ -1,7 +1,8 @@
 # Environment — contains API keys, never commit
 .env
 
-# Python
+# Python (README uses .venv; venv/ is the alternate name)
+.venv/
 venv/
 __pycache__/
 *.pyc
