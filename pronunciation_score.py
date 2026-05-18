@@ -360,3 +360,16 @@ def score_utterance(expected: str, transcript: str, thresholds: dict[str, Any]) 
         "best_token": best_tok,
         "expected_normalized": exp,
     }
+
+
+def transcript_dedupe_key(transcript: str) -> str:
+    """Stable key for ignoring duplicate STT finals of the same spoken utterance."""
+    key = _phrase_key(transcript)
+    if key:
+        return key
+    return _normalize_word(transcript)
+
+
+def lesson_word_key(word: str) -> str:
+    """Normalized key for the target vocabulary word (lesson index burst dedupe)."""
+    return transcript_dedupe_key(word) or _normalize_word(word)

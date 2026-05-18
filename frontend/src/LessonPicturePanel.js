@@ -52,6 +52,8 @@ export default function LessonPicturePanel({
   const [lessonDone, setLessonDone] = useState(null);
   const [redirectIn, setRedirectIn] = useState(null);
   const encRef = useRef(typeof TextEncoder !== "undefined" ? new TextEncoder() : null);
+  /** Skip echoing agent-driven carousel updates back as lesson_index. */
+  const suppressLessonIndexPublishRef = useRef(false);
   const completeTimerRef = useRef(null);
   const tickTimerRef = useRef(null);
 
@@ -92,12 +94,37 @@ export default function LessonPicturePanel({
   const n = items.length;
   const current = n ? items[Math.min(index, n - 1)] : null;
 
+  const applyAgentPictureIndex = useCallback(
+    (rawIndex) => {
+      if (!Number.isFinite(Number(rawIndex)) || n < 1) return;
+      const maxI = Math.max(0, n - 1);
+      const requested = Math.max(0, Math.min(Math.floor(Number(rawIndex)), maxI));
+      setIndex((prev) => {
+        let target = requested;
+        if (target > prev + 1) {
+          target = prev + 1;
+        }
+        if (prev === target) {
+          suppressLessonIndexPublishRef.current = false;
+          return prev;
+        }
+        suppressLessonIndexPublishRef.current = true;
+        return target;
+      });
+    },
+    [n]
+  );
+
   const prev = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
   const next = useCallback(() => setIndex((i) => Math.min(n - 1, i + 1)), [n]);
 
   /** Push word index to the Python agent so prompts + scoring match the picture card. */
   useEffect(() => {
     if (!room || n < 1 || room.state !== ConnectionState.Connected) return;
+    if (suppressLessonIndexPublishRef.current) {
+      suppressLessonIndexPublishRef.current = false;
+      return;
+    }
     const enc = encRef.current;
     if (!enc) return;
     const payload = enc.encode(
@@ -123,11 +150,12 @@ export default function LessonPicturePanel({
         if (msg.topicSlug !== topicSlug) return;
         if (msg.type === "pronunciation_result") {
           setPronunciationHint(msg);
+          if (Number.isFinite(Number(msg.pictureIndex))) {
+            applyAgentPictureIndex(msg.pictureIndex);
+          }
         }
-        if (msg.type === "lesson_set_index" && Number.isFinite(Number(msg.index))) {
-          const maxI = Math.max(0, n - 1);
-          const idx = Math.max(0, Math.min(Math.floor(Number(msg.index)), maxI));
-          setIndex(idx);
+        if (msg.type === "lesson_set_index") {
+          applyAgentPictureIndex(msg.index);
         }
         if (msg.type === "lesson_complete") {
           // Already handled (e.g., duplicate signal)? skip.
@@ -168,7 +196,7 @@ export default function LessonPicturePanel({
     return () => {
       room.off(RoomEvent.DataReceived, onData);
     };
-  }, [room, topicSlug, n, onLessonComplete]);
+  }, [room, topicSlug, n, onLessonComplete, applyAgentPictureIndex]);
 
   useEffect(() => {
     return () => {

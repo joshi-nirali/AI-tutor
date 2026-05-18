@@ -66,8 +66,8 @@ import sys
 import time
 
 from dotenv import load_dotenv
-from livekit import rtc
-from livekit.agents import (
+from livekit import rtc  
+from livekit.agents import ( 
     Agent,
     AgentSession,
     JobContext,
@@ -753,6 +753,45 @@ async def entrypoint(ctx: JobContext):
     # speakers, noise, or duplicate segments). Those can fuzzy-match the lesson
     # word → false "correct" → auto-advance while the child never spoke.
     scoring_mute_until: float | None = None
+    transcript_lock = asyncio.Lock()
+    pipeline_index_lock_until: float | None = None
+    pending_advance_trigger_norm: str | None = None
+    last_stt_dedupe_key: str | None = None
+    last_stt_dedupe_at: float = 0.0
+    last_pronunciation_burst_key: str | None = None
+    last_pronunciation_burst_at: float = 0.0
+    last_published_picture_index: int | None = None
+
+    def _stt_final_dedupe_s() -> float:
+        raw = (os.getenv("KID_TUTOR_STT_FINAL_DEDUPE_S", "2.5") or "2.5").strip()
+        try:
+            v = float(raw)
+        except ValueError:
+            v = 2.5
+        return max(0.5, min(v, 10.0))
+
+    def _pipeline_index_lock_s() -> float:
+        raw = (os.getenv("KID_TUTOR_PIPELINE_INDEX_LOCK_S", "8.0") or "8.0").strip()
+        try:
+            v = float(raw)
+        except ValueError:
+            v = 8.0
+        return max(2.0, min(v, 30.0))
+
+    def _mark_pipeline_index_lock() -> None:
+        nonlocal pipeline_index_lock_until
+        pipeline_index_lock_until = time.monotonic() + _pipeline_index_lock_s()
+
+    def _pipeline_controls_index() -> bool:
+        return (
+            pipeline_index_lock_until is not None
+            and time.monotonic() < pipeline_index_lock_until
+        )
+
+    def _clear_pipeline_index_lock() -> None:
+        nonlocal pipeline_index_lock_until, pending_advance_trigger_norm
+        pipeline_index_lock_until = None
+        pending_advance_trigger_norm = None
 
     def _post_intro_scoring_mute_s() -> float:
         raw = (os.getenv("KID_TUTOR_POST_INTRO_SCORING_DELAY_S", "5.0") or "5.0").strip()
@@ -882,6 +921,40 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning("publish_data failed: %s", e)
 
+    async def publish_lesson_picture_index(index: int, reason: str) -> int:
+        """Publish at most one forward step per advance; skip duplicate indices."""
+        nonlocal last_published_picture_index
+        if not lesson.words:
+            return 0
+        clamped = max(0, min(int(index), len(lesson.words) - 1))
+        if last_published_picture_index is not None:
+            if clamped == last_published_picture_index:
+                logger.debug(
+                    "skip duplicate lesson_set_index %s (%s)",
+                    clamped,
+                    reason,
+                )
+                return clamped
+            if clamped > last_published_picture_index + 1:
+                logger.warning(
+                    "picture jump %s→%s capped to %s (%s)",
+                    last_published_picture_index,
+                    clamped,
+                    last_published_picture_index + 1,
+                    reason,
+                )
+                clamped = last_published_picture_index + 1
+        last_published_picture_index = clamped
+        await publish_tutor_json(
+            {
+                "type": "lesson_set_index",
+                "topicSlug": topic_slug,
+                "index": clamped,
+                "reason": reason,
+            }
+        )
+        return clamped
+
     input_speech_started_sent = False
 
     async def publish_input_speech_started_once() -> None:
@@ -960,17 +1033,22 @@ async def entrypoint(ctx: JobContext):
         async def go_to_next_lesson_word(_ctx: RunContext) -> str:
             if not lesson.words:
                 return "No vocabulary list in this lesson."
+            if lesson.pending_advance_to_index is not None:
+                return (
+                    "Picture advance is waiting for the child to speak after their last correct "
+                    "word — do not call this tool until they respond."
+                )
+            if _pipeline_controls_index():
+                w = lesson.expected_word() or "n/a"
+                return (
+                    f"Picture is already at index {lesson.word_index} (word: {w}) from pronunciation "
+                    "scoring — do not advance again."
+                )
             last = len(lesson.words) - 1
             if lesson.word_index >= last:
                 return "Already on the last word — celebrate or wrap up."
             lesson.set_word_index(lesson.word_index + 1)
-            await publish_tutor_json(
-                {
-                    "type": "lesson_set_index",
-                    "topicSlug": topic_slug,
-                    "index": lesson.word_index,
-                }
-            )
+            await publish_lesson_picture_index(lesson.word_index, "go_to_next_lesson_word")
             await refresh_agent_instructions()
             w = lesson.expected_word() or "n/a"
             return f"Advanced to index {lesson.word_index} (word: {w})."
@@ -985,6 +1063,17 @@ async def entrypoint(ctx: JobContext):
         )
         async def sync_lesson_picture_index(_ctx: RunContext, word_index: int) -> str:
             requested = max(0, min(int(word_index), max(len(lesson.words) - 1, 0)))
+            if lesson.pending_advance_to_index is not None and requested != lesson.word_index:
+                return (
+                    "Picture will advance when the child speaks after their correct word — "
+                    "do not jump the carousel index yet."
+                )
+            if _pipeline_controls_index() and requested != lesson.word_index:
+                w = lesson.expected_word() or "n/a"
+                return (
+                    f"Picture already synced to index {lesson.word_index} (word: {w}) from "
+                    "pronunciation scoring — no change."
+                )
             # Don't re-publish or rebuild instructions when the LLM asks us to set
             # the index to where we already are. The previous behavior caused an
             # extra lesson_set_index round-trip on every "correct" turn (LLM
@@ -994,12 +1083,8 @@ async def entrypoint(ctx: JobContext):
                 w = lesson.expected_word() or "n/a"
                 return f"Already at index {lesson.word_index} (word: {w}); no change."
             lesson.set_word_index(requested)
-            await publish_tutor_json(
-                {
-                    "type": "lesson_set_index",
-                    "topicSlug": topic_slug,
-                    "index": lesson.word_index,
-                }
+            await publish_lesson_picture_index(
+                lesson.word_index, "sync_lesson_picture_index"
             )
             await refresh_agent_instructions()
             w = lesson.expected_word() or "n/a"
@@ -1078,6 +1163,11 @@ async def entrypoint(ctx: JobContext):
     async def handle_final_transcript(text: str) -> None:
         if mode not in ("vocabulary", "speaking"):
             return
+        async with transcript_lock:
+            await _handle_final_transcript_locked(text)
+
+    async def _handle_final_transcript_locked(text: str) -> None:
+        nonlocal last_stt_dedupe_key, last_stt_dedupe_at, last_pronunciation_burst_key, last_pronunciation_burst_at, pending_advance_trigger_norm
         if not lesson_started:
             # First utterance after the greeting: hand off to the lesson. Run this
             # branch *before* ``should_skip_scoring`` — one-word feeling answers
@@ -1109,70 +1199,92 @@ async def entrypoint(ctx: JobContext):
                 )
                 return
 
+        norm_key = pronunciation_score.transcript_dedupe_key(text)
+        if norm_key:
+            _now = time.monotonic()
+            if (
+                norm_key == last_stt_dedupe_key
+                and (_now - last_stt_dedupe_at) < _stt_final_dedupe_s()
+            ):
+                logger.debug(
+                    "ignoring duplicate STT final within %.1fs: %r",
+                    _now - last_stt_dedupe_at,
+                    text,
+                )
+                return
+            last_stt_dedupe_key = norm_key
+            last_stt_dedupe_at = _now
+
         # Waiting for any real utterance before syncing the picture to the next word after
         # a correct score (see deferred advance below).
         if lesson.pending_advance_to_index is not None:
+            if pending_advance_trigger_norm and norm_key == pending_advance_trigger_norm:
+                logger.debug(
+                    "duplicate STT final for deferred advance (same as correct utterance) — ignore: %r",
+                    text,
+                )
+                return
             pidx = lesson.pending_advance_to_index
             if lesson.words and 0 <= pidx < len(lesson.words):
                 next_w = lesson.words[pidx]
-                if pronunciation_score.looks_like_readiness_acknowledgment(text, next_w):
+
+                async def _apply_deferred_picture_advance(reason: str) -> None:
+                    nonlocal pending_advance_trigger_norm
                     lesson.apply_pending_advance()
-                    await publish_tutor_json(
-                        {
-                            "type": "lesson_set_index",
-                            "topicSlug": topic_slug,
-                            "index": lesson.word_index,
-                            "reason": "deferred_advance_readiness",
-                        }
+                    pending_advance_trigger_norm = None
+                    _mark_pipeline_index_lock()
+                    await publish_lesson_picture_index(
+                        lesson.word_index, reason
                     )
                     await refresh_agent_instructions()
-                    logger.info(
-                        "deferred picture advance applied (readiness) → index %s",
-                        lesson.word_index,
-                    )
-                    return
+
                 if pronunciation_score.should_skip_scoring(text):
                     return
-                if pronunciation_score.looks_like_chat(text):
-                    # Still counts as "they answered" — sync picture so the tutor can react without
-                    # mis-scoring chat as the vocabulary token.
-                    lesson.apply_pending_advance()
-                    await publish_tutor_json(
-                        {
-                            "type": "lesson_set_index",
-                            "topicSlug": topic_slug,
-                            "index": lesson.word_index,
-                            "reason": "deferred_advance_chat",
-                        }
-                    )
-                    await refresh_agent_instructions()
+                if pronunciation_score.looks_like_readiness_acknowledgment(text, next_w):
                     logger.debug(
-                        "deferred picture advance applied (conversational reply): %r",
+                        "readiness reply during deferred handoff — not advancing: %r",
                         text,
                     )
                     return
-                lesson.apply_pending_advance()
-                await publish_tutor_json(
-                    {
-                        "type": "lesson_set_index",
-                        "topicSlug": topic_slug,
-                        "index": lesson.word_index,
-                        "reason": "deferred_advance_attempt",
-                    }
-                )
-                await refresh_agent_instructions()
+                if pronunciation_score.looks_like_chat(text):
+                    logger.debug(
+                        "chat during deferred handoff — not advancing: %r",
+                        text,
+                    )
+                    return
+                await _apply_deferred_picture_advance("deferred_advance_attempt")
                 logger.info(
                     "deferred picture advance applied (attempt) → index %s; scoring same utterance",
                     lesson.word_index,
                 )
             else:
                 lesson.pending_advance_to_index = None
+                pending_advance_trigger_norm = None
 
         if pronunciation_score.should_skip_scoring(text):
             return
         expected = lesson.expected_word()
         if not expected:
             return
+        scored_at_index = lesson.word_index
+        exp_key = pronunciation_score.lesson_word_key(expected)
+        if exp_key:
+            burst_key = f"{scored_at_index}:{exp_key}"
+            _burst_now = time.monotonic()
+            if (
+                burst_key == last_pronunciation_burst_key
+                and (_burst_now - last_pronunciation_burst_at)
+                < _stt_final_dedupe_s()
+            ):
+                logger.debug(
+                    "repeated STT for same lesson word %r (index %s) within %.1fs — ignore",
+                    expected,
+                    scored_at_index,
+                    _burst_now - last_pronunciation_burst_at,
+                )
+                return
+            last_pronunciation_burst_key = burst_key
+            last_pronunciation_burst_at = _burst_now
         # Don't score as pronunciation when the child is answering meta prompts such as
         # "Are you ready?" — plain "yes"/"ok" are handled by should_skip_scoring; phrases
         # like "yes I'm ready" used to reach score_utterance and could mis-trigger advances.
@@ -1198,10 +1310,70 @@ async def entrypoint(ctx: JobContext):
             return
         meta = lesson.record_score(result["score"], result["band"], result["best_token"])
         cue = avatar_cue_for_band(pron_rules, result["band"])
+
+        # Decide picture + lesson index before pronunciation_result so the UI gets one index.
+        advanced = False
+        deferred_next_intro = False
+        next_word: str | None = None
+        is_last_word = False
+        picture_index = scored_at_index
+        if (
+            auto_advance_on_correct
+            and result["band"] == "correct"
+            and lesson.words
+            and not pronunciation_score.looks_like_short_ready_affirmation(text)
+        ):
+            _extend_scoring_mute(_post_advance_scoring_mute_s())
+            last_idx = len(lesson.words) - 1
+            if scored_at_index < last_idx and lesson.word_index == scored_at_index:
+                next_idx = scored_at_index + 1
+                next_word = lesson.words[next_idx]
+                picture_index = next_idx
+                if defer_picture_until_response:
+                    if lesson.pending_advance_to_index is None:
+                        lesson.pending_advance_to_index = next_idx
+                        pending_advance_trigger_norm = norm_key or None
+                        deferred_next_intro = True
+                        picture_index = await publish_lesson_picture_index(
+                            next_idx, "correct_advance_picture_deferred"
+                        )
+                        logger.info(
+                            "correct — picture → index %s (next word: %s); scoring handoff on next speech",
+                            picture_index,
+                            next_word,
+                        )
+                    else:
+                        logger.debug(
+                            "correct score while deferred handoff already queued — no extra advance"
+                        )
+                else:
+                    lesson.set_word_index(next_idx)
+                    _mark_pipeline_index_lock()
+                    picture_index = await publish_lesson_picture_index(
+                        next_idx, "auto_advance_on_correct"
+                    )
+                    advanced = True
+                    logger.info(
+                        "auto-advanced lesson to index %s (next word: %s) after correct pronunciation",
+                        lesson.word_index,
+                        next_word,
+                    )
+            elif scored_at_index >= last_idx:
+                is_last_word = True
+                picture_index = scored_at_index
+            else:
+                logger.debug(
+                    "correct at index %s but lesson.word_index=%s — skip extra picture advance",
+                    scored_at_index,
+                    lesson.word_index,
+                )
+                picture_index = lesson.word_index
+
         pr_payload: dict = {
             "type": "pronunciation_result",
             "topicSlug": topic_slug,
-            "wordIndex": lesson.word_index,
+            "wordIndex": scored_at_index,
+            "pictureIndex": picture_index,
             "expected": expected,
             "said": text,
             "bestToken": result["best_token"],
@@ -1214,47 +1386,6 @@ async def entrypoint(ctx: JobContext):
         if cue:
             pr_payload["avatarCue"] = cue
         await publish_tutor_json(pr_payload)
-
-        # Decide whether to advance BEFORE we craft the spoken reply, so the
-        # celebration sentence can flow straight into introducing the next word
-        # and the agent's instruction context already reflects the new target.
-        advanced = False
-        deferred_next_intro = False
-        next_word: str | None = None
-        is_last_word = False
-        if auto_advance_on_correct and result["band"] == "correct" and lesson.words:
-            last_idx = len(lesson.words) - 1
-            if lesson.word_index < last_idx:
-                if defer_picture_until_response:
-                    lesson.pending_advance_to_index = lesson.word_index + 1
-                    next_word = lesson.words[lesson.pending_advance_to_index]
-                    deferred_next_intro = True
-                    _extend_scoring_mute(_post_advance_scoring_mute_s())
-                    logger.info(
-                        "deferring picture to index %s until child speaks (next word: %s)",
-                        lesson.pending_advance_to_index,
-                        next_word,
-                    )
-                else:
-                    lesson.set_word_index(lesson.word_index + 1)
-                    next_word = lesson.expected_word()
-                    await publish_tutor_json(
-                        {
-                            "type": "lesson_set_index",
-                            "topicSlug": topic_slug,
-                            "index": lesson.word_index,
-                            "reason": "auto_advance_on_correct",
-                        }
-                    )
-                    advanced = True
-                    _extend_scoring_mute(_post_advance_scoring_mute_s())
-                    logger.info(
-                        "auto-advanced lesson to index %s (next word: %s) after correct pronunciation",
-                        lesson.word_index,
-                        next_word,
-                    )
-            else:
-                is_last_word = True
 
         await refresh_agent_instructions()
 
@@ -1309,7 +1440,8 @@ async def entrypoint(ctx: JobContext):
                         f" Then in the SAME short turn, smoothly move on to the next word "
                         f"\"{next_word}\": say it once as a complete word (never spell it letter-by-letter) and ask the child to try it. "
                         "Do not pause for confirmation between the praise and the new word — "
-                        "keep it as one upbeat 1–2 sentence reply."
+                        "keep it as one upbeat 1–2 sentence reply. "
+                        "Do NOT call go_to_next_lesson_word or sync_lesson_picture_index — the picture already advanced."
                     )
                 elif is_last_word and result["band"] == "correct":
                     # Definitive goodbye — no "want to play again?" question, because
@@ -1408,6 +1540,7 @@ async def entrypoint(ctx: JobContext):
             child_name_from_app = raw[:160]
             profile_slug = str(msg.get("tutorSlug") or "").strip().lower()
             profile_voice = str(msg.get("cartesiaVoiceId") or "").strip()
+            server_voice = _cartesia_voice_for_tutor(tutor_slug)
             if profile_slug and profile_slug != tutor_slug:
                 logger.warning(
                     "child_profile tutorSlug=%r does not match room tutor_slug=%r — "
@@ -1415,14 +1548,30 @@ async def entrypoint(ctx: JobContext):
                     profile_slug,
                     tutor_slug,
                 )
-            if profile_voice:
-                await apply_cartesia_voice(profile_voice, source="child_profile")
+            # Room slug + CARTESIA_VOICE_<SLUG> in .env are authoritative. Only accept the
+            # browser UUID when it matches this session's tutor; otherwise both tutors can end
+            # up on the same fallback voice from a stale or empty React env build.
+            voice_to_apply = server_voice
+            voice_source = "room_tutor_slug"
+            if profile_voice and profile_slug == tutor_slug:
+                voice_to_apply = profile_voice
+                voice_source = "child_profile"
+            elif profile_voice and profile_voice != server_voice:
+                logger.warning(
+                    "child_profile cartesiaVoiceId=%s ignored for tutor %s — using server %s "
+                    "(set REACT_APP_CARTESIA_VOICE_%s in frontend/.env.local to match .env)",
+                    profile_voice,
+                    tutor_slug,
+                    server_voice,
+                    tutor_slug.upper(),
+                )
+            await apply_cartesia_voice(voice_to_apply, source=voice_source)
             await refresh_agent_instructions()
             logger.info(
-                "child_profile from browser: name=%r tutorSlug=%r cartesiaVoiceId=%r (topic=%s)",
+                "child_profile from browser: name=%r tutorSlug=%r voice_applied=%r (topic=%s)",
                 child_name_from_app,
                 profile_slug or tutor_slug,
-                profile_voice or cartesia_voice,
+                voice_to_apply,
                 topic_slug,
             )
             child_profile_received.set()
@@ -1437,6 +1586,7 @@ async def entrypoint(ctx: JobContext):
         except (TypeError, ValueError):
             return
         lesson.set_word_index(idx_int)
+        _clear_pipeline_index_lock()
         await publish_tutor_json(
             {
                 "type": "lesson_index_ack",
