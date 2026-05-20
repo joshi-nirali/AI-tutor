@@ -293,6 +293,46 @@ def looks_like_readiness_acknowledgment(transcript: str, expected: str) -> bool:
     return False
 
 
+# Bare yes/ok/ready only — used to block auto-advance after a correct score, not for greeting handoff.
+_SHORT_READY_AFFIRMATION_TOKENS: frozenset[str] = frozenset(
+    {
+        "yes",
+        "yeah",
+        "yep",
+        "yup",
+        "ok",
+        "okay",
+        "sure",
+        "ready",
+        "mhm",
+        "uhhuh",
+        "uhuh",
+    }
+)
+_SHORT_READY_AFFIRMATION_RE = re.compile(
+    r"^\s*(yes|yeah|yep|yup|ok|okay|sure|ready|mhm|uh[\s\-]?huh)\s*[.!?…]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def looks_like_short_ready_affirmation(transcript: str) -> bool:
+    """True for very short yes/ok/ready replies that must not auto-advance the lesson.
+
+    Narrower than ``looks_like_readiness_acknowledgment`` (excludes fine/good/great and long
+    \"yes I'm ready\" phrases). Prevents a bare \"yes\" after a correct score from skipping
+    to the next vocabulary word.
+    """
+    t = (transcript or "").strip()
+    if not t:
+        return True
+    if _SHORT_READY_AFFIRMATION_RE.match(t):
+        return True
+    norm = [_normalize_word(tok) for tok in _tokens(t) if _normalize_word(tok)]
+    if not norm or len(norm) > 3:
+        return False
+    return all(tok in _SHORT_READY_AFFIRMATION_TOKENS for tok in norm)
+
+
 def score_utterance(expected: str, transcript: str, thresholds: dict[str, Any]) -> dict[str, Any]:
     """
     Return score 0-100, band correct|almost|incorrect, and best matching token from transcript.

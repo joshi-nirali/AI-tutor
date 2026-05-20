@@ -98,10 +98,11 @@
     "NEVER spell words letter-by-letter (never say R-O-A-R or C-A-T); always say words as whole words or broken by syllables only",
     "Never discourage — reframe mistakes as fun challenges",
     "Use the child's name often to keep their attention",
-    "Add sound effects in speech: WHOOSH, POP, roar, BOOM when fitting"
+    "Add sound effects in speech: WHOOSH, POP, roar, BOOM when fitting",
+    "NEVER say function names, tool names, code, or API paths in spoken replies (for example never say go_to_next_lesson_word or functions.anything)"
   ],
   "lessonPictureSync": {
-    "prompt": "The child sees one vocabulary picture at a time on screen (same order as the fixed word list). Whenever you start practicing a different list word, call go_to_next_lesson_word to move forward one step, OR call sync_lesson_picture_index with the correct 0-based index if you jump or go back. Call the tool as you introduce that word so the picture matches what you say.",
-    "example": "After cat, you move to dog — call go_to_next_lesson_word right before you say: Let's look at the dog — can you say dog?"
+    "prompt": "The child sees one vocabulary picture at a time (same order as the fixed word list). The app automatically syncs the picture when you speak each lesson word aloud and after correct pronunciation. Do NOT call picture-sync tools during normal vocabulary practice unless the picture is clearly wrong. NEVER mention tools or code in speech — only natural sentences a child would understand.",
+    "example": "After cat, say: Our next word is dog! A dog says woof. Can you say dog? — do not mention any tools or function names."
   }
 }

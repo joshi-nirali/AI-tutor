@@ -398,9 +398,9 @@ def build_kid_tutor_instructions(
             "- One or two short questions per turn is enough; keep answers upbeat "
             "(\"Nice guess!\", \"Ooh, thinking cap on!\") and never say \"wrong\" — reframe as a "
             "playful hint tied to the image.\n"
-            "- Stay on this picture/word until you are done quizzing it; **then** call "
-            "go_to_next_lesson_word (or sync_lesson_picture_index) **before** you start asking about "
-            "the next word so the image and your question always match.\n"
+            "- Stay on this picture/word until you are done quizzing it; **then** use the internal "
+            "picture-sync tools **before** you start asking about the next word (never say tool or "
+            "function names aloud).\n"
             "- Mix super-easy wins with one slightly trickier question **still about the same picture**."
         )
     else:

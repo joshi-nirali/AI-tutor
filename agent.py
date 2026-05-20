@@ -19,6 +19,8 @@ Optional env:
   CARTESIA_STT_MODEL — default ``ink-whisper`` (child speech → text only). CARTESIA_TTS_MODEL — default ``sonic-3``
   (tutor speaking timbre). Changing STT does **not** change how the tutor sounds; use TTS model + ``CARTESIA_VOICE_*``.
   CARTESIA_VOICE / CARTESIA_VOICE_<SLUG> — Sonic voice UUIDs from https://play.cartesia.ai
+  CARTESIA_TTS_SPEED / CARTESIA_TTS_SPEED_<SLUG> — Sonic-3 speech speed as a float 0.6–2.0 (1.0 = normal).
+  Cub defaults to 0.88 when unset; override with e.g. ``CARTESIA_TTS_SPEED_CUB=0.85`` in ``.env``.
   KID_TUTOR_LOG_TRANSCRIPTS — set ``1`` to log each Cartesia STT final transcript (verbose; for STT debugging).
   LIVEKIT_LOG_LEVEL / LOG_LEVEL — worker and job-process verbosity (default INFO in prod). Set ``ERROR`` and you will
   not see ``bithuman-agent`` INFO lines in the console.
@@ -42,9 +44,9 @@ Optional env:
   KID_TUTOR_AUTO_ADVANCE_ON_CORRECT — default ``1``. After a ``correct`` pronunciation band the lesson
   index advances one step, the UI picture is synced, and the tutor's celebration reply already introduces
   the next word in the same turn. Set ``0`` to require manual UI/data-channel advancement.
-  KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE — default ``1``. With auto-advance on, the picture index moves only
-  after the child's next utterance (silence alone never advances). Set ``0`` for immediate picture sync on
-  each correct score (legacy behavior).
+  KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE — default ``0``. When ``1``, lesson index still advances on
+  correct but the on-screen picture may wait for the child's next utterance. Set ``0`` for immediate
+  picture sync on each correct score (recommended).
   KID_TUTOR_MIN_ATTEMPT_SCORE — default ``40``. Transcripts whose best similarity to the target word is
   below this score are treated as conversation (not a pronunciation attempt) and pass through to the LLM
   without scripted scoring feedback.
@@ -105,31 +107,144 @@ _LETTER_SPELL_RE = re.compile(r"\b([A-Za-z])(?:[-\s]+[A-Za-z]){2,}\b")
 # Convert to lowercase so TTS says the word aloud.
 _ALL_CAPS_RE = re.compile(r"\b[A-Z]{2,}\b")
 
+# LLM sometimes leaks tool-call text into spoken replies (e.g. functions.go_to_next_lesson_word).
+_TOOL_NAME_LEAK_RE = re.compile(
+    r"(?:functions\.)?(?:go_to_next_lesson_word|sync_lesson_picture_index)\b",
+    re.I,
+)
+_FUNCTIONS_NAMESPACE_LEAK_RE = re.compile(r"functions\.[a-z_][a-z0-9_]*\s*", re.I)
+
 
 def _fix_tts_text(text: str) -> str:
-    """Fix two TTS problems:
-    1. 'R O A R' (spaced letters) → 'roar'
-    2. 'ROAAAR' (all-caps word) → 'roaaar'  so Cartesia speaks the word, not each letter
-    """
+    """Fix TTS problems: letter spelling, ALL-CAPS acronyms, leaked tool names."""
+    text = _TOOL_NAME_LEAK_RE.sub("", text)
+    text = _FUNCTIONS_NAMESPACE_LEAK_RE.sub("", text)
     text = _LETTER_SPELL_RE.sub(lambda m: re.sub(r"[-\s]+", "", m.group(0)).lower(), text)
     text = _ALL_CAPS_RE.sub(lambda m: m.group(0).lower(), text)
-    return text
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _lesson_word_mentioned_in_speech(spoken_text: str, word: str) -> bool:
+    """True if *word* appears in tutor TTS (handles hyphens / ALL-CAPS fixes)."""
+    if not (spoken_text or "").strip() or not (word or "").strip():
+        return False
+    spoken_lower = spoken_text.lower()
+    wl = word.lower().strip()
+    if re.search(rf"\b{re.escape(wl)}\b", spoken_lower):
+        return True
+    compact = re.sub(r"[\s\-]+", "", spoken_lower)
+    wl_compact = re.sub(r"[\s\-]+", "", wl)
+    return bool(wl_compact) and len(wl_compact) >= 3 and wl_compact in compact
+
+
+# "Can you say cat?", "try elephant", etc.
+_TTS_SAY_WORD_RE = re.compile(
+    r"\b(?:say|try|practice|repeat)(?:\s+the\s+word)?\s+([a-z][a-z\-']{1,24})\b",
+    re.I,
+)
+_TTS_FIRST_WORD_PHRASE_RE = re.compile(
+    r"\bfirst\s+(?:lesson\s+)?word\s+is\s+([a-z][a-z\-']{1,24})\b",
+    re.I,
+)
+_TTS_NEXT_WORD_PHRASE_RE = re.compile(
+    r"\bnext\s+word\s+is\s+([a-z][a-z\-']{1,24})\b",
+    re.I,
+)
+
+
+def _lesson_word_compact_key(word: str) -> str:
+    wk = pronunciation_score.lesson_word_key(word)
+    return re.sub(r"[\s\-']+", "", (wk or word).lower())
+
+
+def _vocab_index_for_spoken_token(token: str, words: list[str]) -> int | None:
+    key = _lesson_word_compact_key(token)
+    if len(key) < 2:
+        return None
+    for i, w in enumerate(words):
+        if _lesson_word_compact_key(w) == key:
+            return i
+    return None
+
+
+def _tts_last_say_prompt_word_index(spoken_text: str, words: list[str]) -> int | None:
+    """Last say/try prompt in the buffer (what the tutor is asking for right now)."""
+    if not words:
+        return None
+    last: int | None = None
+    for m in _TTS_SAY_WORD_RE.finditer(spoken_text or ""):
+        idx = _vocab_index_for_spoken_token(m.group(1), words)
+        if idx is not None:
+            last = idx
+    return last
+
+
+def _pick_tts_lesson_word_index(
+    spoken_text: str,
+    words: list[str],
+    *,
+    current_index: int,
+    pending_index: int | None,
+) -> int | None:
+    """Pick at most one list index from explicit tutor phrasing — never skip ahead in the list."""
+    if not words or not (spoken_text or "").strip():
+        return None
+    cur = max(0, min(current_index, len(words) - 1))
+    max_allowed = cur + 1
+    if pending_index is not None:
+        max_allowed = min(max_allowed, pending_index)
+
+    for m in _TTS_FIRST_WORD_PHRASE_RE.finditer(spoken_text):
+        idx = _vocab_index_for_spoken_token(m.group(1), words)
+        if idx is not None and idx <= max_allowed:
+            return idx
+
+    for m in _TTS_NEXT_WORD_PHRASE_RE.finditer(spoken_text):
+        idx = _vocab_index_for_spoken_token(m.group(1), words)
+        if idx is not None and idx <= max_allowed and idx in (cur, cur + 1):
+            return idx
+
+    say_idx = _tts_last_say_prompt_word_index(spoken_text, words)
+    if say_idx is not None and say_idx <= max_allowed:
+        return say_idx
+
+    if pending_index is not None and pending_index < len(words):
+        if _lesson_word_mentioned_in_speech(spoken_text, words[pending_index]):
+            return pending_index
+
+    if _lesson_word_mentioned_in_speech(spoken_text, words[cur]):
+        return cur
+
+    return None
 
 
 class _KidTutorAgent(Agent):
     """Agent subclass that strips letter-by-letter spellings from TTS text."""
 
+    def __init__(self, *args, picture_sync_from_tts=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._picture_sync_from_tts = picture_sync_from_tts
+
     def tts_node(self, text, model_settings):
+        sync_fn = self._picture_sync_from_tts
+
         async def _filtered():
             buffer = ""
             async for chunk in text:
                 logger.info("tts_chunk raw: %r", chunk)
                 buffer += chunk
                 # Flush on sentence boundary or when buffer grows large
-                if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 200:
+                if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 100:
                     fixed = _fix_tts_text(buffer)
                     if fixed != buffer:
                         logger.info("tts fix applied: %r → %r", buffer.strip(), fixed.strip())
+                    if sync_fn:
+                        try:
+                            await sync_fn(fixed)
+                        except Exception as e:
+                            logger.debug("tts picture sync: %s", e)
                     yield fixed
                     buffer = ""
             # Flush any remaining text
@@ -137,6 +252,11 @@ class _KidTutorAgent(Agent):
                 fixed = _fix_tts_text(buffer)
                 if fixed != buffer:
                     logger.info("tts fix applied: %r → %r", buffer.strip(), fixed.strip())
+                if sync_fn:
+                    try:
+                        await sync_fn(fixed)
+                    except Exception as e:
+                        logger.debug("tts picture sync: %s", e)
                 yield fixed
 
         return Agent.default.tts_node(self, _filtered(), model_settings)
@@ -288,6 +408,31 @@ def _cartesia_voice_for_tutor(tutor_slug: str) -> str:
     return (os.getenv("CARTESIA_VOICE", "") or "").strip() or _DEFAULT_CARTESIA_VOICE
 
 
+def _cartesia_tts_speed_for_tutor(tutor_slug: str) -> float:
+    """Cartesia Sonic-3 speed (0.6–2.0; 1.0 ≈ normal). Cub is slightly slower by default."""
+    slug = (tutor_slug or "").strip().lower()
+    if slug:
+        per = (os.getenv(f"CARTESIA_TTS_SPEED_{slug.upper()}", "") or "").strip()
+        if per:
+            try:
+                return max(0.6, min(2.0, float(per)))
+            except ValueError:
+                logger.warning(
+                    "Invalid CARTESIA_TTS_SPEED_%s=%r — ignored",
+                    slug.upper(),
+                    per,
+                )
+    raw = (os.getenv("CARTESIA_TTS_SPEED", "") or "").strip()
+    if raw:
+        try:
+            return max(0.6, min(2.0, float(raw)))
+        except ValueError:
+            logger.warning("Invalid CARTESIA_TTS_SPEED=%r — ignored", raw)
+    if slug == "cub":
+        return 0.88
+    return 1.0
+
+
 _hydrate_tutor_cartesia_voices()
 
 
@@ -382,6 +527,7 @@ def _build_agent_session(*, tutor_slug: str, use_avatar: bool) -> AgentSession:
     stt_language = (os.getenv("CARTESIA_STT_LANGUAGE", "en") or "en").strip()
     deepgram_model = (os.getenv("DEEPGRAM_STT_MODEL", "nova-3") or "nova-3").strip()
     cartesia_voice = _cartesia_voice_for_tutor(tutor_slug)
+    cartesia_speed = _cartesia_tts_speed_for_tutor(tutor_slug)
     llm_model = (os.getenv("OPENAI_LLM_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").strip()
     if "realtime" in llm_model.lower():
         raise ValueError(
@@ -389,11 +535,12 @@ def _build_agent_session(*, tutor_slug: str, use_avatar: bool) -> AgentSession:
             "Set OPENAI_LLM_MODEL to a chat model (e.g. gpt-4.1-mini, gpt-4o-mini)."
         )
     logger.info(
-        "Voice pipeline: Deepgram STT model=%s language=%s | Cartesia TTS model=%s voice=%s | OpenAI LLM=%s",
+        "Voice pipeline: Deepgram STT model=%s language=%s | Cartesia TTS model=%s voice=%s speed=%s | OpenAI LLM=%s",
         deepgram_model,
         stt_language,
         tts_model,
         cartesia_voice,
+        cartesia_speed,
         llm_model,
     )
     th = _kid_tutor_turn_handling(use_avatar=use_avatar)
@@ -402,7 +549,7 @@ def _build_agent_session(*, tutor_slug: str, use_avatar: bool) -> AgentSession:
     kwargs: dict = {
         "stt": deepgram.STT(model=deepgram_model, language=stt_language),
         "llm": openai.LLM(model=llm_model),
-        "tts": cartesia.TTS(model=tts_model, voice=cartesia_voice),
+        "tts": cartesia.TTS(model=tts_model, voice=cartesia_voice, speed=cartesia_speed),
         "vad": silero.VAD.load(),
     }
     # Always use VAD-based turn detection — avoids AdaptiveInterruptionDetector
@@ -599,6 +746,13 @@ def _register_voice_debug_handlers(room: rtc.Room, session: AgentSession) -> Non
             logger.error("Cartesia STT error [%s]: %s", src_name, msg)
         elif "TTS" in src_name:
             logger.error("Cartesia TTS error [%s]: %s", src_name, msg)
+            status = getattr(err, "status_code", None)
+            if status == 402 or "402" in msg or "quota" in msg.lower() or "credits" in msg.lower():
+                logger.error(
+                    "Cartesia TTS blocked: model credits / quota limit reached for this API key. "
+                    "The tutor cannot speak until you add credits or upgrade at https://play.cartesia.ai "
+                    "(Billing / Usage). This is not a code bug."
+                )
         elif "LLM" in src_name:
             logger.error("OpenAI chat LLM error [%s]: %s", src_name, msg)
             if "model.request" in msg or "missing_scope" in msg:
@@ -901,12 +1055,14 @@ async def entrypoint(ctx: JobContext):
         if tts is None:
             logger.warning("Cannot apply Cartesia voice from %s — session has no TTS", source)
             return
-        tts.update_options(voice=voice_id)
+        speed = _cartesia_tts_speed_for_tutor(tutor_slug)
+        tts.update_options(voice=voice_id, speed=speed)
         tts_m = getattr(getattr(tts, "_opts", None), "model", None)
         logger.info(
-            "Cartesia TTS voice applied from %s: voice=%s (tts_model=%s)",
+            "Cartesia TTS voice applied from %s: voice=%s speed=%s (tts_model=%s)",
             source,
             voice_id,
+            speed,
             tts_m or (os.getenv("CARTESIA_TTS_MODEL", "sonic-3") or "sonic-3").strip(),
         )
 
@@ -954,6 +1110,61 @@ async def entrypoint(ctx: JobContext):
             }
         )
         return clamped
+
+    async def _maybe_sync_picture_from_tts(spoken_text: str) -> None:
+        """Sync lesson index + carousel to the word the tutor is teaching (current or +1 only)."""
+        if mode not in ("vocabulary", "speaking") or not lesson.words:
+            return
+        if not (spoken_text or "").strip():
+            return
+        words = lesson.words
+        pending = lesson.pending_advance_to_index
+        target_idx = _pick_tts_lesson_word_index(
+            spoken_text,
+            words,
+            current_index=lesson.word_index,
+            pending_index=pending,
+        )
+        if target_idx is None:
+            return
+
+        max_step = lesson.word_index + 1
+        if pending is not None:
+            max_step = pending
+        if target_idx > max_step:
+            logger.debug(
+                "tts picture sync ignored %s (%r) — beyond allowed step %s",
+                target_idx,
+                words[target_idx],
+                max_step,
+            )
+            return
+        if last_published_picture_index == target_idx and lesson.word_index == target_idx:
+            return
+
+        if pending is not None:
+            if target_idx != pending:
+                return
+            await publish_lesson_picture_index(target_idx, "tts_spoken_lesson_word")
+            return
+
+        if lesson.word_index != target_idx:
+            lesson.set_word_index(target_idx)
+            _mark_pipeline_index_lock()
+            await refresh_agent_instructions()
+            logger.info(
+                "tts lesson index synced to %s (%r)",
+                target_idx,
+                words[target_idx],
+            )
+
+        if last_published_picture_index != target_idx:
+            await publish_lesson_picture_index(target_idx, "tts_spoken_lesson_word")
+            logger.info(
+                "tts picture synced to index %s (%r)",
+                target_idx,
+                words[target_idx],
+            )
 
     input_speech_started_sent = False
 
@@ -1013,7 +1224,7 @@ async def entrypoint(ctx: JobContext):
         logger.info("Auto-advance lesson picture on correct pronunciation: disabled")
 
     defer_picture_until_response = os.getenv(
-        "KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE", "1"
+        "KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE", "0"
     ).strip().lower() in ("1", "true", "yes", "on")
     if auto_advance_on_correct and defer_picture_until_response:
         logger.info(
@@ -1026,8 +1237,9 @@ async def entrypoint(ctx: JobContext):
 
         @function_tool(
             description=(
-                "Advance one step in the lesson word list and sync the child's picture. "
-                "Call when you move to the next vocabulary word in order."
+                "Internal only: advance one step in the lesson word list and sync the picture. "
+                "Do not mention this tool in speech. In vocabulary mode the app usually advances "
+                "automatically after a correct pronunciation — call only if the picture is clearly wrong."
             )
         )
         async def go_to_next_lesson_word(_ctx: RunContext) -> str:
@@ -1055,10 +1267,8 @@ async def entrypoint(ctx: JobContext):
 
         @function_tool(
             description=(
-                "Set the child's picture carousel to this 0-based index in the lesson word list "
-                "when you jump to a specific word or go back. Safe to call: it is a no-op if the "
-                "picture is already at this index, so it will not double-advance after an "
-                "auto-advance from the scoring pipeline."
+                "Internal only: set the picture carousel to a 0-based lesson index. "
+                "Never mention this tool in speech. Call only when the picture is clearly out of sync."
             )
         )
         async def sync_lesson_picture_index(_ctx: RunContext, word_index: int) -> str:
@@ -1093,7 +1303,11 @@ async def entrypoint(ctx: JobContext):
         lesson_tools.append(go_to_next_lesson_word)
         lesson_tools.append(sync_lesson_picture_index)
 
-    kid_agent = _KidTutorAgent(instructions=full_instructions(), tools=lesson_tools)
+    kid_agent = _KidTutorAgent(
+        instructions=full_instructions(),
+        tools=lesson_tools,
+        picture_sync_from_tts=_maybe_sync_picture_from_tts,
+    )
 
     async def refresh_agent_instructions() -> None:
         async with instruction_lock:
@@ -1124,6 +1338,9 @@ async def entrypoint(ctx: JobContext):
             return
         if not lesson.words:
             return
+        if lesson.word_index != 0 or lesson.pending_advance_to_index is not None:
+            lesson.set_word_index(0)
+        await publish_lesson_picture_index(0, "lesson_handoff_first_word")
         expected = lesson.expected_word()
         if not expected:
             return
@@ -1142,10 +1359,11 @@ async def entrypoint(ctx: JobContext):
                     "your tutor voice (no name-asking, no new opener question). "
                     "If they just told you their name or how to address them, repeat that name back **exactly** "
                     "in that sentence (match what they said, not a different name). "
-                    f"Then introduce the FIRST lesson word \"{expected}\": say it once "
+                    f"Then introduce ONLY the FIRST lesson word \"{expected}\" — say it once "
                     "as a complete spoken word (NEVER spell it letter-by-letter like R-O-A-R), "
                     "and invite them to try saying it. "
                     "Keep the whole reply to 2 short sentences. "
+                    "Do NOT mention any other vocabulary words from the list (no dog, lion, etc.). "
                     "Do NOT skip past this word — wait for them to attempt it before moving on."
                 ),
             )
@@ -1328,18 +1546,13 @@ async def entrypoint(ctx: JobContext):
             if scored_at_index < last_idx and lesson.word_index == scored_at_index:
                 next_idx = scored_at_index + 1
                 next_word = lesson.words[next_idx]
-                picture_index = next_idx
                 if defer_picture_until_response:
                     if lesson.pending_advance_to_index is None:
                         lesson.pending_advance_to_index = next_idx
                         pending_advance_trigger_norm = norm_key or None
                         deferred_next_intro = True
-                        picture_index = await publish_lesson_picture_index(
-                            next_idx, "correct_advance_picture_deferred"
-                        )
                         logger.info(
-                            "correct — picture → index %s (next word: %s); scoring handoff on next speech",
-                            picture_index,
+                            "correct — picture will sync when tutor speaks %r; scoring handoff on next speech",
                             next_word,
                         )
                     else:
@@ -1349,12 +1562,9 @@ async def entrypoint(ctx: JobContext):
                 else:
                     lesson.set_word_index(next_idx)
                     _mark_pipeline_index_lock()
-                    picture_index = await publish_lesson_picture_index(
-                        next_idx, "auto_advance_on_correct"
-                    )
                     advanced = True
                     logger.info(
-                        "auto-advanced lesson to index %s (next word: %s) after correct pronunciation",
+                        "auto-advanced lesson to index %s (next word: %s); picture sync on tutor TTS",
                         lesson.word_index,
                         next_word,
                     )
@@ -1428,20 +1638,22 @@ async def entrypoint(ctx: JobContext):
                 if deferred_next_intro and next_word:
                     transition = (
                         f" They pronounced \"{expected}\" correctly. The next word is \"{next_word}\". "
-                        "IMPORTANT: The child's picture still shows the previous word until they speak — "
-                        f"celebrate briefly, then invite them to try \"{next_word}\". "
+                        f"Celebrate briefly, then invite them to try \"{next_word}\" — say that word once "
+                        "as a complete spoken word (never letter-by-letter) so the picture can update. "
                         "If they have not answered yet, do NOT skip ahead — ask again in a fun, "
                         f'encouraging way for "{next_word}". '
-                        "Do NOT call go_to_next_lesson_word or sync_lesson_picture_index; the app moves "
-                        "the picture when the child responds."
+                        "The app syncs the picture when you speak the next word — only use natural "
+                        "child-friendly sentences; never say tool names, function names, or code."
                     )
                 elif advanced and next_word:
                     transition = (
                         f" Then in the SAME short turn, smoothly move on to the next word "
-                        f"\"{next_word}\": say it once as a complete word (never spell it letter-by-letter) and ask the child to try it. "
+                        f"\"{next_word}\": say it once as a complete word (never spell it letter-by-letter) "
+                        "and ask the child to try it. "
                         "Do not pause for confirmation between the praise and the new word — "
                         "keep it as one upbeat 1–2 sentence reply. "
-                        "Do NOT call go_to_next_lesson_word or sync_lesson_picture_index — the picture already advanced."
+                        "The picture updates when you speak the next word aloud — never mention tools "
+                        "or code in speech."
                     )
                 elif is_last_word and result["band"] == "correct":
                     # Definitive goodbye — no "want to play again?" question, because

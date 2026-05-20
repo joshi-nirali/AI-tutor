@@ -99,11 +99,11 @@ class KidLessonSession:
         nw = self.next_word_while_deferring_picture()
         if nw is not None and exp:
             lines.append(
-                f"- The on-screen picture still matches \"{exp}\" (index {self.word_index}), but the child "
-                f'just succeeded — your job is to invite them to say the NEXT word "{nw}" next. '
-                "The picture will update automatically when they speak (any real answer). "
-                f'If they say nothing, cheerfully ask again for "{nw}" — do NOT skip ahead or call '
-                "go_to_next_lesson_word to force the picture; stay on this prompt until they respond."
+                f"- The child just succeeded on \"{exp}\" (index {self.word_index}). "
+                f'Invite them to say the NEXT word "{nw}"; the picture updates when you speak '
+                f'"{nw}" aloud (complete word, not spelled). '
+                f'If they say nothing, cheerfully ask again for "{nw}" — do NOT skip ahead; stay on '
+                "this prompt until they respond (never mention tools or code in speech)."
             )
 
         if self.last_score is not None and self.last_band and self.last_said is not None:
@@ -128,7 +128,7 @@ class KidLessonSession:
         )
         if self.words and self.pending_advance_to_index is None:
             lines.append(
-                "- When YOU change which list word you are teaching, call go_to_next_lesson_word or "
-                "sync_lesson_picture_index so the on-screen picture matches (see main instructions)."
+                "- The on-screen picture syncs when you speak each lesson word aloud — do not mention "
+                "tools, function names, or code in speech."
             )
         return "\n".join(lines)
