@@ -1509,6 +1509,16 @@
   background: #7b1fa2;
 }
 
+.lesson-vocab-steps--speaking li {
+  background: #ffe0b2;
+  color: #bf360c;
+}
+
+.lesson-vocab-steps--speaking li.is-active {
+  background: #e65100;
+  color: #fff;
+}
+
 .lesson-speaking-tag {
   margin: 0 0 0.65rem;
   padding: 0.35rem 0.65rem;

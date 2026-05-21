@@ -363,28 +363,37 @@ export default function LessonPicturePanel({
       {lessonMode === "vocabulary" && modeUi.steps ? (
         <ol
           className={`lesson-vocab-steps${awaitingCheck ? " lesson-vocab-steps--check" : ""}`}
-          aria-label="Vocabulary lesson steps"
+          aria-label="Teaching mode steps"
         >
-          {modeUi.steps.map((label, i) => (
-            <li
-              key={label}
-              className={
-                awaitingCheck && i === 2
-                  ? "is-active"
-                  : !awaitingCheck && i === 0
-                    ? "is-active"
-                    : ""
-              }
-            >
-              {label}
-            </li>
-          ))}
+          {modeUi.steps.map((label, i) => {
+            const lastIdx = modeUi.steps.length - 1;
+            const active = awaitingCheck ? i === lastIdx : i === 0;
+            return (
+              <li key={label} className={active ? "is-active" : ""}>
+                {label}
+              </li>
+            );
+          })}
         </ol>
       ) : null}
       {lessonMode === "speaking" ? (
-        <p className="lesson-speaking-tag" role="status">
-          Fast practice — say each word clearly, then move on
-        </p>
+        <>
+          {modeUi.steps ? (
+            <ol
+              className="lesson-vocab-steps lesson-vocab-steps--speaking"
+              aria-label="Speaking coach steps"
+            >
+              {modeUi.steps.map((label, i) => (
+                <li key={label} className={i === 0 ? "is-active" : ""}>
+                  {label}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          <p className="lesson-speaking-tag" role="status">
+            Coach models a sentence — you repeat clearly, then move on
+          </p>
+        </>
       ) : null}
       <div className="tutor-session-grid">
         <aside className="tutor-session-avatar-col" aria-label="Your tutor">

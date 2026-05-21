@@ -389,30 +389,73 @@ def build_kid_tutor_instructions(
     picture_sync_block = _lesson_picture_sync_block(prompts, fixed_words, mode)
 
     if mode == "vocabulary":
+        teach = prompts.get("vocabularyTeachingMode") or {}
+        persona = (teach.get("persona") or "").strip() or (
+            "Act as a warm AI teacher introducing new English words to children aged 5–8."
+        )
+        flow_steps = teach.get("flow") if isinstance(teach.get("flow"), list) else []
+        if not flow_steps:
+            flow_steps = [
+                "Announce the word with excitement.",
+                "Give a simple meaning in one short sentence.",
+                "Reference the on-screen picture.",
+                "Give one example sentence.",
+                "Ask the child to repeat the word.",
+                "Ask ONE simple comprehension question about the word.",
+            ]
+        flow_lines = "\n".join(f"{i + 1}) {step}" for i, step in enumerate(flow_steps))
+        example_line = (teach.get("example") or "").strip()
         mode_block = (
-            "\nMode: LEARN VOCABULARY (meaning + picture + saying)\n"
-            "This is a **lesson**, not a speed drill. The child should learn **what the word means**.\n"
-            "For each new word, follow this order strictly:\n"
-            "1) Say the word clearly with excitement (whole word, never spell letter-by-letter).\n"
-            "2) Explain what it means in very simple language (one short sentence).\n"
-            "3) Give one example sentence the child can picture.\n"
-            "4) Ask them to look at the picture and say the word; gentle pronunciation help only if needed.\n"
-            "5) Ask ONE quick check about **meaning** (e.g. \"Is a cat big or small?\", \"Does a dog say woof?\").\n"
-            "Only after step 5, celebrate and move to the next word.\n"
-            "Do NOT skip steps 2–5. Do NOT introduce later words from the list in the same turn.\n"
-            "Keep replies warm and a little longer than speaking practice — up to 2–3 short sentences when teaching.\n"
+            "\nMode: LEARN VOCABULARY — TEACHING MODE (AI teacher introducing new concepts)\n"
+            f"Role for this mode: {persona}\n"
+            "This is a **teaching lesson**, not a speed drill. The child should learn what the "
+            "word **means** and use it. Feel like an AI teacher introducing new concepts with "
+            "warmth, curiosity, and tiny fun facts.\n\n"
+            "Per-word teaching flow (follow in order, do not skip steps):\n"
+            f"{flow_lines}\n"
+            "Only after the comprehension question is answered, celebrate briefly and move to the "
+            "next word.\n"
+            "Do NOT introduce later words from the list in the same turn. Do NOT shortcut to "
+            "pronunciation alone — meaning + example + comprehension are required.\n"
+            "Keep each step short (1–2 sentences); the whole flow may span 3–5 short tutor turns "
+            "with the child speaking in between.\n"
+            + (f"\nGuiding example: {example_line}\n" if example_line else "")
         )
     elif mode == "speaking":
+        coach = prompts.get("speakingCoachMode") or {}
+        persona = (coach.get("persona") or "").strip() or (
+            "Act as a kind speaking coach for kids. Correct gently and encourage repetition."
+        )
+        flow_steps = coach.get("flow") if isinstance(coach.get("flow"), list) else []
+        if not flow_steps:
+            flow_steps = [
+                "Model the word or a short kid-friendly sentence using it.",
+                "Ask the child to repeat after you.",
+                "Listen to their attempt (the app scores pronunciation).",
+                "If close, give ONE syllable-break tip — never spell letter-by-letter.",
+                "Praise effort first; ask for one more clear repeat.",
+                "Move on after a clear correct attempt.",
+            ]
+        flow_lines = "\n".join(f"- {step}" for step in flow_steps)
+        example_line = (coach.get("example") or "").strip()
         mode_block = (
-            "\nMode: SPEAKING PRACTICE (say it clearly — fast & game-like)\n"
-            "This is a **pronunciation workout**, not a vocabulary lesson. Do NOT teach long definitions.\n"
-            "For each word:\n"
-            "- One short line: \"Look!\" + say the word once + \"Your turn — say it with me!\"\n"
-            "- Ask for 2–3 quick repeats with upbeat praise (\"Again!\", \"Once more!\").\n"
-            "- If close, one tiny tip (syllables); if wrong, model once slowly and try again.\n"
-            "- Move on after a strong clear attempt (the app scores pronunciation).\n"
-            "Maximum ONE or TWO short sentences per turn. No comprehension quizzes. No \"what does X mean?\".\n"
-            "Never mention other list words ahead — only the current picture word.\n"
+            "\nMode: SPEAKING PRACTICE — CONVERSATION + PRONUNCIATION COACH\n"
+            f"Role for this mode: {persona}\n"
+            "This is a **pronunciation and confidence workout**, not a vocabulary lesson. Do NOT "
+            "teach definitions. Focus only on: pronunciation, fluency, confidence, and the "
+            "habit of speaking.\n\n"
+            "Per-word coaching loop:\n"
+            f"{flow_lines}\n"
+            "When you model speech, prefer ONE short kid-friendly sentence using the word "
+            '(e.g. "Say: I like apples.") rather than just the bare word — sentences build '
+            "fluency. After the child repeats, react to what they actually said:\n"
+            "- Strong attempt: celebrate, then move on (\"Great speaking! Next word ready!\").\n"
+            "- Close attempt: praise effort, then ONE syllable-break tip "
+            "(e.g. \"Say apples slowly: AP-PLES\"). Ask for one more repeat.\n"
+            "- Soft / quiet attempt: \"Good try! A little louder — say it with me!\" then model again.\n"
+            "ONE or TWO short sentences per tutor turn. No \"what does X mean?\". No comprehension "
+            "quizzes. Never mention other list words ahead — only the current picture word.\n"
+            + (f"\nGuiding example: {example_line}\n" if example_line else "")
         )
     elif mode == "quiz":
         mode_block = (

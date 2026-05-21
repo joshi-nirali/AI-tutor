@@ -20,7 +20,8 @@ Optional env:
   (tutor speaking timbre). Changing STT does **not** change how the tutor sounds; use TTS model + ``CARTESIA_VOICE_*``.
   CARTESIA_VOICE / CARTESIA_VOICE_<SLUG> — Sonic voice UUIDs from https://play.cartesia.ai
   CARTESIA_TTS_SPEED / CARTESIA_TTS_SPEED_<SLUG> — Sonic-3 speech speed as a float 0.6–2.0 (1.0 = normal).
-  Cub defaults to 0.88 when unset; override with e.g. ``CARTESIA_TTS_SPEED_CUB=0.85`` in ``.env``.
+  Leo and Cub default to 0.88 when unset (slower for kids 3–7); override per tutor with e.g.
+  ``CARTESIA_TTS_SPEED_LEO=0.85`` / ``CARTESIA_TTS_SPEED_CUB=0.85`` in ``.env``.
   KID_TUTOR_LOG_TRANSCRIPTS — set ``1`` to log each Cartesia STT final transcript (verbose; for STT debugging).
   LIVEKIT_LOG_LEVEL / LOG_LEVEL — worker and job-process verbosity (default INFO in prod). Set ``ERROR`` and you will
   not see ``bithuman-agent`` INFO lines in the console.
@@ -449,7 +450,12 @@ def _advance_bands_for_mode(mode: str) -> frozenset[str]:
 
 
 def _cartesia_tts_speed_for_tutor(tutor_slug: str) -> float:
-    """Cartesia Sonic-3 speed (0.6–2.0; 1.0 ≈ normal). Cub is slightly slower by default."""
+    """Cartesia Sonic-3 speed (0.6–2.0; 1.0 ≈ normal).
+
+    Kid tutors (Leo and Cub) default to a slightly slower 0.88 so young learners
+    (ages 3–7) can follow the words; override per tutor with
+    ``CARTESIA_TTS_SPEED_<SLUG>`` in ``.env``.
+    """
     slug = (tutor_slug or "").strip().lower()
     if slug:
         per = (os.getenv(f"CARTESIA_TTS_SPEED_{slug.upper()}", "") or "").strip()
@@ -468,7 +474,7 @@ def _cartesia_tts_speed_for_tutor(tutor_slug: str) -> float:
             return max(0.6, min(2.0, float(raw)))
         except ValueError:
             logger.warning("Invalid CARTESIA_TTS_SPEED=%r — ignored", raw)
-    if slug == "cub":
+    if slug in ("cub", "leo"):
         return 0.88
     return 1.0
 
@@ -1409,15 +1415,18 @@ async def entrypoint(ctx: JobContext):
             )
         if mode == "speaking":
             mode_intro = (
-                f"Then start SPEAKING PRACTICE on the first word \"{expected}\": "
-                "one short line — say the word once and ask them to say it clearly with you. "
-                "No long definition. 1–2 sentences total."
+                f'Then start SPEAKING COACH mode on the first word "{expected}". '
+                f'Model a short kid-friendly sentence using "{expected}" '
+                f'(e.g. "Say: I like {expected}!" or "Say: I see a {expected}!") and ask them '
+                "to repeat after you. No definitions. 1–2 short sentences."
             )
         else:
             mode_intro = (
-                f"Then start VOCABULARY on the first word \"{expected}\": "
-                "say the word, give a tiny meaning, one example, then ask them to say it. "
-                "You will ask one quick meaning check before moving on. 2–3 short sentences."
+                f'Then start TEACHING MODE on the first word "{expected}". '
+                f'Announce the word with excitement, give a simple meaning a 5-year-old can '
+                f'picture, point at the picture on screen, and one short example sentence using '
+                f'"{expected}". Then ask them to say "{expected}". You will ask ONE comprehension '
+                "question about the word after they repeat it. 2–3 short sentences."
             )
         try:
             session.generate_reply(
@@ -1823,15 +1832,19 @@ async def entrypoint(ctx: JobContext):
                 elif advanced and next_word:
                     if mode == "speaking":
                         transition = (
-                            f" Celebrate, then in ONE short line introduce \"{next_word}\" and ask them "
-                            "to say it clearly 2 times. No definitions. 1–2 sentences total."
+                            f' Speaking coach mode. Celebrate their attempt at "{expected}" in one '
+                            f'short cheer, then model a short kid-friendly sentence using "{next_word}" '
+                            f'(e.g. "Say: I see a {next_word}!" or "Say: I like {next_word}!"). '
+                            "Ask them to repeat after you. No definitions. Total 1–2 sentences."
                         )
                     else:
                         transition = (
-                            f" They did well on \"{expected}\". Before the next word, if you have not "
-                            f"already done a quick meaning check for \"{expected}\", ask ONE now. "
-                            f"Then teach \"{next_word}\": meaning + example + ask them to say it "
-                            "(2–3 short sentences). Picture updates when you speak the next word."
+                            f' Teaching mode. They did well on "{expected}". If you have not already '
+                            f'asked the comprehension question for "{expected}", ask ONE now and wait. '
+                            f'Otherwise begin teaching "{next_word}": announce the word, give a simple '
+                            "meaning, point at the picture, and one short example sentence (2–3 short "
+                            "sentences). Ask them to repeat after that. Picture updates when you speak "
+                            "the next word."
                         )
                 elif is_last_word and result["band"] == "correct":
                     # Definitive goodbye — no "want to play again?" question, because

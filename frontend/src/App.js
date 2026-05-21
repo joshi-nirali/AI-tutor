@@ -56,14 +56,14 @@ const MODES = [
   {
     id: "vocabulary",
     title: "Learn vocabulary",
-    hint: "Learn meaning, say the word, answer one quick question per word.",
+    hint: "Teaching mode — your AI teacher explains each word with meaning, example, and a fun question.",
     emoji: "📖",
     theme: "vocab",
   },
   {
     id: "speaking",
     title: "Speaking practice",
-    hint: "Quick repeat practice — move to the next word when you say it clearly.",
+    hint: "Speaking coach — repeat after the coach, get gentle tips, build pronunciation and confidence.",
     emoji: "🎤",
     theme: "speak",
   },

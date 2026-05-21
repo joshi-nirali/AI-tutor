@@ -99,23 +99,34 @@ class KidLessonSession:
             f"- Lesson word list index (0-based): {self.word_index} of {max(len(self.words) - 1, 0)}.",
         ]
         if self.session_mode == "vocabulary":
+            lines.append(
+                "- Active role: AI TEACHER (Teaching Mode). Tone: warm, curious, explains in simple "
+                "English for ages 5–8."
+            )
             if self.vocab_awaiting_comprehension:
                 exp = self.expected_word()
                 lines.append(
-                    "- Vocabulary mode: the child pronounced the word well. Ask ONE quick comprehension "
-                    f'question about "{exp or "this word"}" only (yes/no or A/B). Do NOT introduce the '
-                    "next word yet. Wait for their answer."
+                    "- Teaching step NOW: comprehension question. The child pronounced "
+                    f'"{exp or "this word"}" well — ask ONE simple question about its meaning '
+                    "(yes/no, A/B, or \"where does it live?\"-style). Wait for their answer. "
+                    "Do NOT announce the next word yet."
                 )
             else:
                 lines.append(
-                    "- Vocabulary mode: teach meaning + example, ask them to say the word, then ONE "
-                    "comprehension check before moving on — never skip straight to the next word after "
-                    "pronunciation alone."
+                    "- Teaching flow per word: (1) announce word, (2) simple meaning, "
+                    "(3) point at the picture, (4) one example sentence, (5) ask them to repeat, "
+                    "(6) ONE comprehension question. Never skip to the next word after pronunciation alone."
                 )
         elif self.session_mode == "speaking":
             lines.append(
-                "- Speaking practice mode: quick say-and-repeat only — no definitions or meaning quizzes; "
-                "1–2 short sentences per turn; advance after clear pronunciation."
+                "- Active role: SPEAKING COACH (Conversation + Pronunciation Mode). Tone: kind, "
+                "energetic, focused on pronunciation, fluency, and confidence."
+            )
+            lines.append(
+                "- Coaching loop per word: model a short kid-friendly sentence using the word "
+                "(\"Say: I like apples.\"), ask them to repeat, then give ONE syllable-break tip "
+                "only if needed (e.g. AP-PLES). Praise effort first; no definitions or comprehension "
+                "questions. 1–2 short sentences per turn."
             )
         if exp:
             lines.append(f"- Current practice target word: \"{exp}\".")
