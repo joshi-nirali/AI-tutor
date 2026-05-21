@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useMaybeRoomContext, useLocalParticipant } from "@livekit/components-react";
 import { ConnectionState, RoomEvent } from "livekit-client";
+import { lessonModeUi } from "./lessonModeUi";
 
 const KID_TUTOR_DATA_TOPIC = "kidtutor";
 
@@ -37,6 +38,7 @@ export default function LessonPicturePanel({
   topicSlug,
   tutorLabel,
   childName,
+  lessonMode = "vocabulary",
   avatarSlot,
   onLessonComplete,
 }) {
@@ -212,9 +214,24 @@ export default function LessonPicturePanel({
   }, []);
 
   const displayName = (childName || "friend").trim() || "friend";
+  const modeUi = useMemo(() => lessonModeUi(lessonMode), [lessonMode]);
+  const flowPhase = pronunciationHint?.flowPhase || "";
+  const awaitingCheck =
+    lessonMode === "vocabulary" &&
+    (pronunciationHint?.awaitingComprehension || flowPhase === "quick_check");
   const promptPhrase = current
-    ? `Can you say “${current.word}”?`
+    ? awaitingCheck && modeUi.promptQuickCheck
+      ? modeUi.promptQuickCheck(current.word)
+      : modeUi.prompt(current.word)
     : "";
+  const bannerHint =
+    awaitingCheck && lessonMode === "vocabulary"
+      ? "Answer the tutor's quick question about this word."
+      : modeUi.cardHint;
+  const listeningBubble =
+    awaitingCheck && modeUi.bubbleQuickCheck
+      ? modeUi.bubbleQuickCheck
+      : modeUi.bubbleListening.replace("{tutor}", tutorLabel);
 
   const onDockRepeat = () => {
     setDockActive("repeat");
@@ -256,12 +273,21 @@ export default function LessonPicturePanel({
     pronunciationHint.wordIndex === index &&
     pronunciationHint.band === "correct";
 
+  const scoreMessage = (() => {
+    if (!pronunciationHint || pronunciationHint.wordIndex !== index) return null;
+    if (awaitingCheck && modeUi.scoreQuickCheck) return modeUi.scoreQuickCheck;
+    if (pronunciationHint.band === "correct") return modeUi.scoreCorrect;
+    if (pronunciationHint.band === "almost") return modeUi.scoreAlmost;
+    return modeUi.scoreOther;
+  })();
+
   const scoreBlock =
     pronunciationHint && pronunciationHint.wordIndex === index ? (
-      <p className="lesson-visual-score lesson-visual-score--card" role="status">
-        {pronunciationHint.band === "correct"
-          ? `${pronunciationHint.score}/100 — nice!`
-          : `${pronunciationHint.score}/100 · keep practicing`}
+      <p
+        className={`lesson-visual-score lesson-visual-score--card lesson-visual-score--${pronunciationHint.band || "other"}`}
+        role="status"
+      >
+        {pronunciationHint.score}/100 — {scoreMessage}
         {pronunciationHint.maxedOut ? " · try the next word when you’re ready" : null}
         {pronunciationHint.avatarCue ? (
           <span
@@ -281,9 +307,9 @@ export default function LessonPicturePanel({
   if (!avatarSlot) {
     return (
       <div className="lesson-visual">
-        <p className="lesson-visual-hint">
-          Look at the picture! Tap <strong>Next</strong> when you and {tutorLabel} are ready for the next
-          word.
+        <p className={`lesson-visual-hint ${modeUi.panelClass}`}>
+          <span className="lesson-mode-badge">{modeUi.badge}</span>
+          {modeUi.cardHint}
         </p>
         <div className="lesson-visual-card">
           {current.imageUrl ? (
@@ -328,7 +354,38 @@ export default function LessonPicturePanel({
   const micListening = Boolean(room && isMicrophoneEnabled);
 
   return (
-    <div className="tutor-session">
+    <div className={`tutor-session ${modeUi.panelClass}`}>
+      <p className="lesson-mode-banner" role="status">
+        <span className="lesson-mode-badge lesson-mode-badge--large">{modeUi.badge}</span>
+        <span className="lesson-mode-banner-title">{modeUi.title}</span>
+        <span className="lesson-mode-banner-hint">{bannerHint}</span>
+      </p>
+      {lessonMode === "vocabulary" && modeUi.steps ? (
+        <ol
+          className={`lesson-vocab-steps${awaitingCheck ? " lesson-vocab-steps--check" : ""}`}
+          aria-label="Vocabulary lesson steps"
+        >
+          {modeUi.steps.map((label, i) => (
+            <li
+              key={label}
+              className={
+                awaitingCheck && i === 2
+                  ? "is-active"
+                  : !awaitingCheck && i === 0
+                    ? "is-active"
+                    : ""
+              }
+            >
+              {label}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {lessonMode === "speaking" ? (
+        <p className="lesson-speaking-tag" role="status">
+          Fast practice — say each word clearly, then move on
+        </p>
+      ) : null}
       <div className="tutor-session-grid">
         <aside className="tutor-session-avatar-col" aria-label="Your tutor">
           {avatarSlot}
@@ -337,14 +394,14 @@ export default function LessonPicturePanel({
               <span className="tutor-bubble-sparkle" aria-hidden>
                 ✦
               </span>
-              Great job, {displayName}!
+              {modeUi.bubbleGreat} {displayName}!
             </div>
           ) : (
             <div className="tutor-bubble tutor-bubble--feedback tutor-bubble--muted">
               <span className="tutor-bubble-sparkle" aria-hidden>
                 ✦
               </span>
-              {tutorLabel} is listening…
+              {listeningBubble}
             </div>
           )}
           <div
@@ -390,13 +447,15 @@ export default function LessonPicturePanel({
               </button>
             </div>
           </div>
-          {current.caption ? <p className="tutor-session-caption">{current.caption}</p> : null}
+          {lessonMode === "vocabulary" && current.caption ? (
+            <p className="tutor-session-caption">{current.caption}</p>
+          ) : null}
           {scoreBlock}
-          <p className="tutor-session-mic-hint">
+          <p className={`tutor-session-mic-hint ${lessonMode === "speaking" ? "tutor-session-mic-hint--speak" : ""}`}>
             <span className="tutor-session-mic-hint-icon" aria-hidden>
-              ▶
+              {lessonMode === "speaking" ? "🎤" : "▶"}
             </span>
-            Tap the microphone and say the word clearly!
+            {modeUi.micHint.replace("{tutor}", tutorLabel)}
           </p>
         </section>
       </div>

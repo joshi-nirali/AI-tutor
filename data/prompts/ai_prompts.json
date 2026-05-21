@@ -102,7 +102,7 @@
     "NEVER say function names, tool names, code, or API paths in spoken replies (for example never say go_to_next_lesson_word or functions.anything)"
   ],
   "lessonPictureSync": {
-    "prompt": "The child sees one vocabulary picture at a time (same order as the fixed word list). The app automatically syncs the picture when you speak each lesson word aloud and after correct pronunciation. Do NOT call picture-sync tools during normal vocabulary practice unless the picture is clearly wrong. NEVER mention tools or code in speech — only natural sentences a child would understand.",
-    "example": "After cat, say: Our next word is dog! A dog says woof. Can you say dog? — do not mention any tools or function names."
+    "prompt": "The child sees one vocabulary picture at a time (same order as the fixed word list). Vocabulary mode: teach meaning before moving on; picture syncs when you speak each word. Speaking mode: short say-repeat only; picture syncs when you speak the next word. Do NOT call picture-sync tools unless the picture is clearly wrong. NEVER mention tools or code in speech.",
+    "example": "Vocabulary after cat: teach dog with meaning then check. Speaking after cat: Great! Say dog! Say it again! — no long definitions."
   }
 }

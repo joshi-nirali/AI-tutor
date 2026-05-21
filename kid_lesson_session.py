@@ -17,9 +17,13 @@ class KidLessonSession:
     last_said: str | None = None
     last_expected: str | None = None
     topic_slug: str = ""
+    #: ``vocabulary`` | ``speaking`` | ``quiz`` — shapes live instruction suffix.
+    session_mode: str = ""
     #: After a ``correct`` score, picture stays on ``word_index`` until the child speaks again;
     #: then we sync to this index (see agent ``KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE``).
     pending_advance_to_index: int | None = None
+    #: Vocabulary-only: pronunciation passed; waiting for a short comprehension answer before advancing.
+    vocab_awaiting_comprehension: bool = False
 
     def set_topic_slug(self, slug: str) -> None:
         self.topic_slug = slug or ""
@@ -41,6 +45,7 @@ class KidLessonSession:
     def set_word_index(self, index: int) -> None:
         """Jump to an index (UI or tool): cancels any deferred picture advance."""
         self.pending_advance_to_index = None
+        self.vocab_awaiting_comprehension = False
         self._apply_word_index(index)
 
     def apply_pending_advance(self) -> None:
@@ -49,6 +54,7 @@ class KidLessonSession:
             return
         idx = self.pending_advance_to_index
         self.pending_advance_to_index = None
+        self.vocab_awaiting_comprehension = False
         self._apply_word_index(idx)
 
     def next_word_while_deferring_picture(self) -> str | None:
@@ -89,8 +95,28 @@ class KidLessonSession:
         lines = [
             "",
             "## Live session state (updated automatically — follow this)",
+            f"- Session mode: {self.session_mode or 'lesson'}.",
             f"- Lesson word list index (0-based): {self.word_index} of {max(len(self.words) - 1, 0)}.",
         ]
+        if self.session_mode == "vocabulary":
+            if self.vocab_awaiting_comprehension:
+                exp = self.expected_word()
+                lines.append(
+                    "- Vocabulary mode: the child pronounced the word well. Ask ONE quick comprehension "
+                    f'question about "{exp or "this word"}" only (yes/no or A/B). Do NOT introduce the '
+                    "next word yet. Wait for their answer."
+                )
+            else:
+                lines.append(
+                    "- Vocabulary mode: teach meaning + example, ask them to say the word, then ONE "
+                    "comprehension check before moving on — never skip straight to the next word after "
+                    "pronunciation alone."
+                )
+        elif self.session_mode == "speaking":
+            lines.append(
+                "- Speaking practice mode: quick say-and-repeat only — no definitions or meaning quizzes; "
+                "1–2 short sentences per turn; advance after clear pronunciation."
+            )
         if exp:
             lines.append(f"- Current practice target word: \"{exp}\".")
         else:

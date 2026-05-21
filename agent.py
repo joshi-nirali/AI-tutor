@@ -115,6 +115,14 @@ _TOOL_NAME_LEAK_RE = re.compile(
 _FUNCTIONS_NAMESPACE_LEAK_RE = re.compile(r"functions\.[a-z_][a-z0-9_]*\s*", re.I)
 
 
+def _tts_has_speakable_content(text: str) -> bool:
+    """False for punctuation-only fragments (e.g. a lone '.') that TTS reads aloud as 'dot'."""
+    if not (text or "").strip():
+        return False
+    core = re.sub(r"[\s.!?…,;:—\-'\"()]+", "", text)
+    return bool(core)
+
+
 def _fix_tts_text(text: str) -> str:
     """Fix TTS problems: letter spelling, ALL-CAPS acronyms, leaked tool names."""
     text = _TOOL_NAME_LEAK_RE.sub("", text)
@@ -123,7 +131,10 @@ def _fix_tts_text(text: str) -> str:
     text = _ALL_CAPS_RE.sub(lambda m: m.group(0).lower(), text)
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    text = text.strip()
+    if text and not _tts_has_speakable_content(text):
+        return ""
+    return text
 
 
 def _lesson_word_mentioned_in_speech(spoken_text: str, word: str) -> bool:
@@ -238,26 +249,32 @@ class _KidTutorAgent(Agent):
                 # Flush on sentence boundary or when buffer grows large
                 if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 100:
                     fixed = _fix_tts_text(buffer)
-                    if fixed != buffer:
+                    if fixed != buffer and fixed:
                         logger.info("tts fix applied: %r → %r", buffer.strip(), fixed.strip())
+                    elif fixed != buffer and not fixed:
+                        logger.debug("tts skip punctuation-only chunk: %r", buffer.strip())
+                    if fixed:
+                        if sync_fn:
+                            try:
+                                await sync_fn(fixed)
+                            except Exception as e:
+                                logger.debug("tts picture sync: %s", e)
+                        yield fixed
+                    buffer = ""
+            # Flush any remaining text
+            if buffer:
+                fixed = _fix_tts_text(buffer)
+                if fixed != buffer and fixed:
+                    logger.info("tts fix applied: %r → %r", buffer.strip(), fixed.strip())
+                elif fixed != buffer and not fixed:
+                    logger.debug("tts skip punctuation-only chunk: %r", buffer.strip())
+                if fixed:
                     if sync_fn:
                         try:
                             await sync_fn(fixed)
                         except Exception as e:
                             logger.debug("tts picture sync: %s", e)
                     yield fixed
-                    buffer = ""
-            # Flush any remaining text
-            if buffer:
-                fixed = _fix_tts_text(buffer)
-                if fixed != buffer:
-                    logger.info("tts fix applied: %r → %r", buffer.strip(), fixed.strip())
-                if sync_fn:
-                    try:
-                        await sync_fn(fixed)
-                    except Exception as e:
-                        logger.debug("tts picture sync: %s", e)
-                yield fixed
 
         return Agent.default.tts_node(self, _filtered(), model_settings)
 
@@ -406,6 +423,29 @@ def _cartesia_voice_for_tutor(tutor_slug: str) -> str:
         if cfg and cfg.get("cartesia_voice"):
             return cfg["cartesia_voice"].strip()
     return (os.getenv("CARTESIA_VOICE", "") or "").strip() or _DEFAULT_CARTESIA_VOICE
+
+
+def _min_attempt_score_for_mode(mode: str) -> int:
+    """Minimum similarity score before treating speech as a pronunciation attempt."""
+    if mode == "speaking":
+        raw = (
+            os.getenv("KID_TUTOR_SPEAKING_MIN_ATTEMPT_SCORE")
+            or os.getenv("KID_TUTOR_MIN_ATTEMPT_SCORE")
+            or "55"
+        )
+    else:
+        raw = os.getenv("KID_TUTOR_MIN_ATTEMPT_SCORE", "40")
+    try:
+        return max(0, min(100, int(str(raw).strip())))
+    except ValueError:
+        return 55 if mode == "speaking" else 40
+
+
+def _advance_bands_for_mode(mode: str) -> frozenset[str]:
+    """Pronunciation bands that may auto-advance the lesson picture."""
+    if mode == "speaking":
+        return frozenset({"correct"})
+    return frozenset({"correct", "almost"})
 
 
 def _cartesia_tts_speed_for_tutor(tutor_slug: str) -> float:
@@ -890,9 +930,17 @@ async def entrypoint(ctx: JobContext):
     score_thresholds = pron_rules.get("scoreThresholds") or {}
     retry_policy = pron_rules.get("retryPolicy") or {}
 
+    _default_max_retries = int(retry_policy.get("maxRetries", 3))
+    if mode == "speaking":
+        max_retries = max(1, min(_default_max_retries, 2))
+    elif mode == "vocabulary":
+        max_retries = max(_default_max_retries, 5)
+    else:
+        max_retries = _default_max_retries
     lesson = KidLessonSession(
         words=fixed_words,
-        max_retries=int(retry_policy.get("maxRetries", 3)),
+        max_retries=max_retries,
+        session_mode=mode,
     )
     lesson.set_topic_slug(topic_slug)
 
@@ -1218,10 +1266,26 @@ async def entrypoint(ctx: JobContext):
     auto_advance_on_correct = os.getenv(
         "KID_TUTOR_AUTO_ADVANCE_ON_CORRECT", "1"
     ).strip().lower() in ("1", "true", "yes", "on")
+    min_attempt_score = _min_attempt_score_for_mode(mode)
+    advance_bands = _advance_bands_for_mode(mode)
     if auto_advance_on_correct:
-        logger.info("Auto-advance lesson picture on correct pronunciation: enabled")
+        logger.info(
+            "Auto-advance lesson picture: enabled (mode=%s, bands=%s, min_attempt_score=%s)",
+            mode,
+            ",".join(sorted(advance_bands)),
+            min_attempt_score,
+        )
     else:
         logger.info("Auto-advance lesson picture on correct pronunciation: disabled")
+    if mode == "vocabulary":
+        logger.info(
+            "Vocabulary flow: teach → say word → one comprehension check → next word (picture stays until check)"
+        )
+    elif mode == "speaking":
+        logger.info(
+            "Speaking flow: quick say-and-repeat; advance on clear pronunciation only (bands=%s)",
+            ",".join(sorted(advance_bands)),
+        )
 
     defer_picture_until_response = os.getenv(
         "KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE", "0"
@@ -1313,14 +1377,6 @@ async def entrypoint(ctx: JobContext):
         async with instruction_lock:
             await kid_agent.update_instructions(full_instructions())
 
-    min_attempt_score = max(
-        0,
-        min(
-            100,
-            int(os.getenv("KID_TUTOR_MIN_ATTEMPT_SCORE", "40").strip() or "40"),
-        ),
-    )
-
     async def transition_into_lesson(reason: str, *, child_utterance: str = "") -> None:
         """Hand off from the greeting to the actual lesson, introducing word 0.
 
@@ -1351,6 +1407,18 @@ async def entrypoint(ctx: JobContext):
                 f"The learner's last spoken reply (speech-to-text) was: {cu!r}. "
                 "Acknowledge that content specifically (if the text looks garbled, guess kindly what a child likely said). "
             )
+        if mode == "speaking":
+            mode_intro = (
+                f"Then start SPEAKING PRACTICE on the first word \"{expected}\": "
+                "one short line — say the word once and ask them to say it clearly with you. "
+                "No long definition. 1–2 sentences total."
+            )
+        else:
+            mode_intro = (
+                f"Then start VOCABULARY on the first word \"{expected}\": "
+                "say the word, give a tiny meaning, one example, then ask them to say it. "
+                "You will ask one quick meaning check before moving on. 2–3 short sentences."
+            )
         try:
             session.generate_reply(
                 instructions=(
@@ -1359,11 +1427,9 @@ async def entrypoint(ctx: JobContext):
                     "your tutor voice (no name-asking, no new opener question). "
                     "If they just told you their name or how to address them, repeat that name back **exactly** "
                     "in that sentence (match what they said, not a different name). "
-                    f"Then introduce ONLY the FIRST lesson word \"{expected}\" — say it once "
-                    "as a complete spoken word (NEVER spell it letter-by-letter like R-O-A-R), "
-                    "and invite them to try saying it. "
-                    "Keep the whole reply to 2 short sentences. "
-                    "Do NOT mention any other vocabulary words from the list (no dog, lion, etc.). "
+                    + mode_intro
+                    + " NEVER spell letter-by-letter. "
+                    "Do NOT mention any other vocabulary words from the list. "
                     "Do NOT skip past this word — wait for them to attempt it before moving on."
                 ),
             )
@@ -1433,8 +1499,76 @@ async def entrypoint(ctx: JobContext):
             last_stt_dedupe_key = norm_key
             last_stt_dedupe_at = _now
 
+        # Vocabulary: pronunciation passed — next child reply is a comprehension answer (not scored as chat).
+        if mode == "vocabulary" and lesson.vocab_awaiting_comprehension:
+            if pending_advance_trigger_norm and norm_key == pending_advance_trigger_norm:
+                logger.debug(
+                    "duplicate STT after vocabulary pronunciation — ignore: %r",
+                    text,
+                )
+                return
+            if pronunciation_score.should_skip_scoring(text):
+                return
+            exp_now = lesson.expected_word()
+            if exp_now and pronunciation_score.looks_like_readiness_acknowledgment(
+                text, exp_now
+            ):
+                logger.debug(
+                    "readiness during vocabulary comprehension wait — ignore: %r",
+                    text,
+                )
+                return
+            pidx = lesson.pending_advance_to_index
+            next_w: str | None = None
+            if pidx is not None and lesson.words and 0 <= pidx < len(lesson.words):
+                next_w = lesson.words[pidx]
+            lesson.vocab_awaiting_comprehension = False
+            if pidx is not None:
+                lesson.apply_pending_advance()
+                pending_advance_trigger_norm = None
+                _mark_pipeline_index_lock()
+                await publish_lesson_picture_index(
+                    lesson.word_index, "vocab_comprehension_answer"
+                )
+                await refresh_agent_instructions()
+                logger.info(
+                    "vocabulary comprehension answered — advanced to index %s (%s)",
+                    lesson.word_index,
+                    next_w,
+                )
+            if scoring_reply_enabled:
+                try:
+                    await asyncio.wait_for(
+                        session.interrupt(force=False),
+                        timeout=_scoring_interrupt_wait_cap_s(),
+                    )
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.debug("vocabulary check interrupt: %s", e)
+                await asyncio.sleep(0.05)
+                try:
+                    if next_w:
+                        session.generate_reply(
+                            instructions=(
+                                f'They answered your quick question about "{exp_now or "the word"}" '
+                                f'(child said: "{text}"). Celebrate briefly, then teach the next word '
+                                f'"{next_w}": say the word, tiny meaning, one example, ask them to say it. '
+                                "Speak the next word as a whole word so the picture stays in sync. "
+                                "2–3 short sentences. Do not mention tools or code."
+                            ),
+                        )
+                    elif exp_now:
+                        session.generate_reply(
+                            instructions=(
+                                f'They answered about "{exp_now}". One warm sentence of praise — '
+                                "all lesson words are done."
+                            ),
+                        )
+                except Exception as e:
+                    logger.warning("generate_reply after vocabulary check: %s", e)
+            return
+
         # Waiting for any real utterance before syncing the picture to the next word after
-        # a correct score (see deferred advance below).
+        # a correct score (speaking defer / KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE).
         if lesson.pending_advance_to_index is not None:
             if pending_advance_trigger_norm and norm_key == pending_advance_trigger_norm:
                 logger.debug(
@@ -1532,12 +1666,13 @@ async def entrypoint(ctx: JobContext):
         # Decide picture + lesson index before pronunciation_result so the UI gets one index.
         advanced = False
         deferred_next_intro = False
+        vocab_check_queued = False
         next_word: str | None = None
         is_last_word = False
         picture_index = scored_at_index
         if (
             auto_advance_on_correct
-            and result["band"] == "correct"
+            and result["band"] in advance_bands
             and lesson.words
             and not pronunciation_score.looks_like_short_ready_affirmation(text)
         ):
@@ -1546,7 +1681,19 @@ async def entrypoint(ctx: JobContext):
             if scored_at_index < last_idx and lesson.word_index == scored_at_index:
                 next_idx = scored_at_index + 1
                 next_word = lesson.words[next_idx]
-                if defer_picture_until_response:
+                if mode == "vocabulary":
+                    if not lesson.vocab_awaiting_comprehension:
+                        lesson.vocab_awaiting_comprehension = True
+                        lesson.pending_advance_to_index = next_idx
+                        pending_advance_trigger_norm = norm_key or None
+                        vocab_check_queued = True
+                        logger.info(
+                            "vocabulary: %r ok — comprehension check before %r (picture stays on %r)",
+                            expected,
+                            next_word,
+                            expected,
+                        )
+                elif defer_picture_until_response:
                     if lesson.pending_advance_to_index is None:
                         lesson.pending_advance_to_index = next_idx
                         pending_advance_trigger_norm = norm_key or None
@@ -1571,6 +1718,13 @@ async def entrypoint(ctx: JobContext):
             elif scored_at_index >= last_idx:
                 is_last_word = True
                 picture_index = scored_at_index
+                if mode == "vocabulary" and not lesson.vocab_awaiting_comprehension:
+                    lesson.vocab_awaiting_comprehension = True
+                    vocab_check_queued = True
+                    logger.info(
+                        "vocabulary: last word %r ok — final comprehension check before wrap-up",
+                        expected,
+                    )
             else:
                 logger.debug(
                     "correct at index %s but lesson.word_index=%s — skip extra picture advance",
@@ -1582,6 +1736,7 @@ async def entrypoint(ctx: JobContext):
         pr_payload: dict = {
             "type": "pronunciation_result",
             "topicSlug": topic_slug,
+            "lessonMode": mode,
             "wordIndex": scored_at_index,
             "pictureIndex": picture_index,
             "expected": expected,
@@ -1595,6 +1750,13 @@ async def entrypoint(ctx: JobContext):
         }
         if cue:
             pr_payload["avatarCue"] = cue
+        if mode == "vocabulary":
+            pr_payload["flowPhase"] = (
+                "quick_check" if lesson.vocab_awaiting_comprehension else "learn"
+            )
+            pr_payload["awaitingComprehension"] = lesson.vocab_awaiting_comprehension
+        elif mode == "speaking":
+            pr_payload["flowPhase"] = "speak_repeat"
         await publish_tutor_json(pr_payload)
 
         await refresh_agent_instructions()
@@ -1614,7 +1776,13 @@ async def entrypoint(ctx: JobContext):
         # sometimes lose audio entirely after a few rounds.
         needs_scripted_reply = (
             scoring_reply_enabled
-            and (advanced or deferred_next_intro or is_last_word or meta["maxed_out"])
+            and (
+                advanced
+                or deferred_next_intro
+                or vocab_check_queued
+                or is_last_word
+                or meta["maxed_out"]
+            )
         )
         if needs_scripted_reply:
             try:
@@ -1635,7 +1803,14 @@ async def entrypoint(ctx: JobContext):
                         f" Voice energy hint for this turn: {cue.get('emotion', '')} tone, "
                         f"{cue.get('animation', '')} body language (express in voice; UI may show cues)."
                     )
-                if deferred_next_intro and next_word:
+                if vocab_check_queued:
+                    transition = (
+                        f' They pronounced "{expected}" well ({result["band"]}). '
+                        f'Ask ONE quick comprehension question about "{expected}" only — '
+                        "yes/no or simple A/B (e.g. big or small?). "
+                        f'Do NOT say "{next_word}" yet and do NOT move on. 1–2 sentences.'
+                    )
+                elif deferred_next_intro and next_word:
                     transition = (
                         f" They pronounced \"{expected}\" correctly. The next word is \"{next_word}\". "
                         f"Celebrate briefly, then invite them to try \"{next_word}\" — say that word once "
@@ -1646,15 +1821,18 @@ async def entrypoint(ctx: JobContext):
                         "child-friendly sentences; never say tool names, function names, or code."
                     )
                 elif advanced and next_word:
-                    transition = (
-                        f" Then in the SAME short turn, smoothly move on to the next word "
-                        f"\"{next_word}\": say it once as a complete word (never spell it letter-by-letter) "
-                        "and ask the child to try it. "
-                        "Do not pause for confirmation between the praise and the new word — "
-                        "keep it as one upbeat 1–2 sentence reply. "
-                        "The picture updates when you speak the next word aloud — never mention tools "
-                        "or code in speech."
-                    )
+                    if mode == "speaking":
+                        transition = (
+                            f" Celebrate, then in ONE short line introduce \"{next_word}\" and ask them "
+                            "to say it clearly 2 times. No definitions. 1–2 sentences total."
+                        )
+                    else:
+                        transition = (
+                            f" They did well on \"{expected}\". Before the next word, if you have not "
+                            f"already done a quick meaning check for \"{expected}\", ask ONE now. "
+                            f"Then teach \"{next_word}\": meaning + example + ask them to say it "
+                            "(2–3 short sentences). Picture updates when you speak the next word."
+                        )
                 elif is_last_word and result["band"] == "correct":
                     # Definitive goodbye — no "want to play again?" question, because
                     # the frontend will auto-redirect back to the categories grid
@@ -1697,7 +1875,11 @@ async def entrypoint(ctx: JobContext):
             # disconnect is driven from the browser (which unmounts LiveKitRoom
             # → cleanly closes the agent session); we just provide the signal
             # and a suggested grace period so the wrap-up audio plays out.
-            if is_last_word and result["band"] == "correct":
+            if (
+                is_last_word
+                and result["band"] == "correct"
+                and not vocab_check_queued
+            ):
                 redirect_ms = max(
                     2000,
                     int(os.getenv("KID_TUTOR_LESSON_COMPLETE_DELAY_MS", "11000") or "11000"),

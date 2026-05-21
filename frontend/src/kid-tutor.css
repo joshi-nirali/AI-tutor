@@ -1415,6 +1415,141 @@
   opacity: 0.85;
 }
 
+.tutor-session-mic-hint--speak {
+  border-color: #ffcc80;
+  background: #fff8f0;
+  color: #e65100;
+}
+
+.lesson-mode-badge {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.lesson-mode--vocabulary .lesson-mode-badge {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.lesson-mode--speaking .lesson-mode-badge {
+  background: #ffe0b2;
+  color: #e65100;
+}
+
+.lesson-mode-badge--large {
+  font-size: 0.78rem;
+  margin-right: 0.55rem;
+}
+
+.lesson-mode-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.65rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.lesson-mode--vocabulary .lesson-mode-banner {
+  background: linear-gradient(90deg, #e8f4fc 0%, #f5fbff 100%);
+  border: 1px solid #90caf9;
+  color: #0d47a1;
+}
+
+.lesson-mode--speaking .lesson-mode-banner {
+  background: linear-gradient(90deg, #fff3e0 0%, #fffaf5 100%);
+  border: 1px solid #ffcc80;
+  color: #bf360c;
+}
+
+.lesson-mode-banner-title {
+  font-weight: 700;
+}
+
+.lesson-mode-banner-hint {
+  font-weight: 500;
+  opacity: 0.92;
+  flex: 1 1 100%;
+}
+
+.lesson-vocab-steps {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0 0 0.65rem;
+  padding: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.lesson-vocab-steps li {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #e8eaf6;
+  color: #3949ab;
+}
+
+.lesson-vocab-steps li.is-active {
+  background: #3949ab;
+  color: #fff;
+}
+
+.lesson-vocab-steps--check li.is-active {
+  background: #7b1fa2;
+}
+
+.lesson-speaking-tag {
+  margin: 0 0 0.65rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  background: #fff3e0;
+  border: 1px solid #ffcc80;
+  color: #e65100;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.tutor-session-header-mode {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.tutor-session-header-mode--vocab {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.tutor-session-header-mode--speak {
+  background: #ffe0b2;
+  color: #e65100;
+}
+
+.lesson-visual-score--correct {
+  color: #2e7d32;
+}
+
+.lesson-visual-score--almost {
+  color: #ef6c00;
+}
+
 .tutor-session-dock {
   display: flex;
   align-items: stretch;

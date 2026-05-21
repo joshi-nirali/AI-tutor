@@ -510,6 +510,11 @@ export default function TutorRoom({
               ★
             </span>
             <span>{tutorLabel ? `${tutorLabel}'s Learning` : "Learning"}</span>
+            {mode === "speaking" ? (
+              <span className="tutor-session-header-mode tutor-session-header-mode--speak">Speaking</span>
+            ) : mode === "vocabulary" ? (
+              <span className="tutor-session-header-mode tutor-session-header-mode--vocab">Vocabulary</span>
+            ) : null}
           </div>
           <div className="tutor-session-header-meta" aria-hidden>
             {/* <span className="tutor-session-level">Level 1</span>
@@ -522,6 +527,7 @@ export default function TutorRoom({
           topicSlug={topicSlug}
           tutorLabel={tutorLabel}
           childName={childName}
+          lessonMode={mode}
           avatarSlot={<TutorAvatarBlock tutorLabel={tutorLabel} />}
           onLessonComplete={onLessonComplete}
         />

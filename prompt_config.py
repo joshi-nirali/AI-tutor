@@ -114,6 +114,16 @@ def _lesson_picture_sync_block(
             "Quiz mode: each question must match the picture currently shown — call the tool as you switch "
             "to the next word so you never ask about a lion while the child still sees a banana."
         )
+    elif mode == "vocabulary":
+        parts.append(
+            "Vocabulary mode: sync the picture when you speak each new word; take time to teach meaning "
+            "before asking them to repeat — do not rush to the next word after one good pronunciation alone."
+        )
+    elif mode == "speaking":
+        parts.append(
+            "Speaking mode: short say-and-repeat rounds only; picture updates when you speak the next word. "
+            "No long definitions — focus on clear pronunciation."
+        )
     return "\n".join(parts) + "\n"
 
 
@@ -130,6 +140,22 @@ lives, what it does, silly either/or, size, or "what letter does it start with?"
 another word from the list until you have moved the on-screen picture to that word (use the lesson \
 picture tools when you change words).
 """
+    vocab_flow = ""
+    speak_flow = ""
+    if mode == "vocabulary":
+        vocab_flow = """
+- **Vocabulary mode only:** For EACH word, complete ALL steps before moving on: (1) say word with excitement,
+  (2) simple meaning for a 4-year-old, (3) one example sentence, (4) ask them to say the word,
+  (5) ONE quick comprehension check (yes/no or either/or about meaning — NOT pronunciation yet).
+  Stay on this word until step 5 is done or they need one gentle repeat. Do NOT rush to the next word
+  after a single good pronunciation.
+"""
+    elif mode == "speaking":
+        speak_flow = """
+- **Speaking practice only:** Do NOT give long lessons or definitions. Per word: point at the picture,
+  say the word once, ask them to repeat 2–3 times with quick praise. One short sentence max per turn.
+  Move on after a clear **correct** pronunciation (the app scores them). No comprehension quizzes.
+"""
     return f"""
 FIXED WORD LIST for this session (only use these as lesson vocabulary / quiz targets / speaking \
 practice words; in this order):
@@ -137,15 +163,13 @@ practice words; in this order):
 
 Rules for this list:
 - Do not introduce other English words as new teaching targets; stay on this list.
-- Teach one word at a time in order: introduce → simple meaning → short example → ask them to say \
-it → one quick check. Then move on unless they need a repeat.
-- In quiz and speaking modes, only ask about words from this list.
+- Teach one word at a time in order.{vocab_flow}{speak_flow}
+- In quiz mode, only ask about words from this list.
 - If the child asks about something off-list, answer in one short sentence if helpful, then gently \
 return to the current list word.
 - After the last word, celebrate, then offer to revisit a favourite or end the lesson.
 - The child's screen shows a large picture for the word they are on (when the lesson has images). \
-Ask them to look at the picture, then connect it to the word (e.g. "This is a banana — can you say \
-banana?").{quiz_extra}"""
+Ask them to look at the picture, then connect it to the word.{quiz_extra}"""
 
 
 def _format_pair_block(title: str, obj: Any) -> str:
@@ -366,22 +390,29 @@ def build_kid_tutor_instructions(
 
     if mode == "vocabulary":
         mode_block = (
-            "\nMode: LEARN VOCABULARY\n"
-            "Follow this flow in order when starting or when the child seems ready for a new word:\n"
-            "1) Say the new word clearly with excitement.\n"
-            "2) Explain what it means in very simple language.\n"
-            "3) Give one short example sentence.\n"
-            "4) Ask the child to say the word; listen and give gentle pronunciation help if needed.\n"
-            "5) Ask one easy yes/no or choice question to check understanding.\n\n"
-            "Stay on kid-friendly words related to the lesson theme."
+            "\nMode: LEARN VOCABULARY (meaning + picture + saying)\n"
+            "This is a **lesson**, not a speed drill. The child should learn **what the word means**.\n"
+            "For each new word, follow this order strictly:\n"
+            "1) Say the word clearly with excitement (whole word, never spell letter-by-letter).\n"
+            "2) Explain what it means in very simple language (one short sentence).\n"
+            "3) Give one example sentence the child can picture.\n"
+            "4) Ask them to look at the picture and say the word; gentle pronunciation help only if needed.\n"
+            "5) Ask ONE quick check about **meaning** (e.g. \"Is a cat big or small?\", \"Does a dog say woof?\").\n"
+            "Only after step 5, celebrate and move to the next word.\n"
+            "Do NOT skip steps 2–5. Do NOT introduce later words from the list in the same turn.\n"
+            "Keep replies warm and a little longer than speaking practice — up to 2–3 short sentences when teaching.\n"
         )
     elif mode == "speaking":
         mode_block = (
-            "\nMode: SPEAKING PRACTICE\n"
-            "Focus on pronunciation and repeating.\n"
-            "- Say a word or short phrase; ask the child to repeat.\n"
-            "- If it is close, celebrate; if not, model slowly in chunks and ask them to try again.\n"
-            "- Keep turns quick and game-like."
+            "\nMode: SPEAKING PRACTICE (say it clearly — fast & game-like)\n"
+            "This is a **pronunciation workout**, not a vocabulary lesson. Do NOT teach long definitions.\n"
+            "For each word:\n"
+            "- One short line: \"Look!\" + say the word once + \"Your turn — say it with me!\"\n"
+            "- Ask for 2–3 quick repeats with upbeat praise (\"Again!\", \"Once more!\").\n"
+            "- If close, one tiny tip (syllables); if wrong, model once slowly and try again.\n"
+            "- Move on after a strong clear attempt (the app scores pronunciation).\n"
+            "Maximum ONE or TWO short sentences per turn. No comprehension quizzes. No \"what does X mean?\".\n"
+            "Never mention other list words ahead — only the current picture word.\n"
         )
     elif mode == "quiz":
         mode_block = (
