@@ -21,7 +21,7 @@ Optional env:
   CARTESIA_VOICE / CARTESIA_VOICE_<SLUG> — Sonic voice UUIDs from https://play.cartesia.ai
   CARTESIA_TTS_SPEED / CARTESIA_TTS_SPEED_<SLUG> — Sonic-3 speech speed as a float 0.6–2.0 (1.0 = normal).
   Leo and Cub default to 0.88 when unset (slower for kids 3–7); override per tutor with e.g.
-  ``CARTESIA_TTS_SPEED_LEO=0.85`` / ``CARTESIA_TTS_SPEED_CUB=0.85`` in ``.env``.
+  ``CARTESIA_TTS_SPEED_LEO=0.90`` / ``CARTESIA_TTS_SPEED_CUB=0.90`` in ``.env``.
   KID_TUTOR_LOG_TRANSCRIPTS — set ``1`` to log each Cartesia STT final transcript (verbose; for STT debugging).
   LIVEKIT_LOG_LEVEL / LOG_LEVEL — worker and job-process verbosity (default INFO in prod). Set ``ERROR`` and you will
   not see ``bithuman-agent`` INFO lines in the console.
@@ -556,7 +556,50 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
         self._bithuman_sink.resume()
 
 
-def _build_agent_session(*, tutor_slug: str, use_avatar: bool) -> AgentSession:
+def _deepgram_keyterms(fixed_words: list[str] | None) -> list[str]:
+    """Words to boost in Deepgram STT for this session.
+
+    Combines: env override (``DEEPGRAM_KEYTERMS``, comma- or pipe-separated) with the
+    current lesson word list. Boosting the lesson vocabulary dramatically improves
+    recognition for kids — e.g. "elephant" / "banana" stop being heard as "elephant"
+    / "panama". Deepgram nova-3 ``keyterm`` is unlimited; nova-2 uses ``keywords``.
+    """
+    out: list[str] = []
+    raw = (os.getenv("DEEPGRAM_KEYTERMS", "") or "").strip()
+    if raw:
+        parts = re.split(r"[|,]", raw)
+        out.extend(p.strip() for p in parts if p.strip())
+    if fixed_words:
+        out.extend(w.strip() for w in fixed_words if isinstance(w, str) and w.strip())
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for w in out:
+        k = w.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        deduped.append(w)
+    return deduped
+
+
+def _deepgram_endpointing_ms() -> int:
+    """Kid speech often has long pauses — bigger endpointing helps STT wait for full words."""
+    raw = (os.getenv("DEEPGRAM_ENDPOINTING_MS", "") or "").strip()
+    if not raw:
+        return 25
+    try:
+        return max(10, min(2000, int(raw)))
+    except ValueError:
+        logger.warning("Invalid DEEPGRAM_ENDPOINTING_MS=%r — ignored", raw)
+        return 25
+
+
+def _build_agent_session(
+    *,
+    tutor_slug: str,
+    use_avatar: bool,
+    fixed_words: list[str] | None = None,
+) -> AgentSession:
     """Deepgram Nova-3 STT + Cartesia Sonic TTS; OpenAI chat LLM for reasoning and tools."""
     if not (os.getenv("CARTESIA_API_KEY") or "").strip():
         raise ValueError(
@@ -570,8 +613,12 @@ def _build_agent_session(*, tutor_slug: str, use_avatar: bool) -> AgentSession:
             "Create a key at https://console.deepgram.com"
         )
     tts_model = (os.getenv("CARTESIA_TTS_MODEL", "sonic-3") or "sonic-3").strip()
-    stt_language = (os.getenv("CARTESIA_STT_LANGUAGE", "en") or "en").strip()
     deepgram_model = (os.getenv("DEEPGRAM_STT_MODEL", "nova-3") or "nova-3").strip()
+    # Indian English by default ("en-IN") — supported on both nova-3 and nova-2. Override
+    # via DEEPGRAM_STT_LANGUAGE=en, en-US, en-GB, en-AU, multi (nova-3 multilingual), …
+    deepgram_language = (
+        os.getenv("DEEPGRAM_STT_LANGUAGE", "en-IN") or "en-IN"
+    ).strip()
     cartesia_voice = _cartesia_voice_for_tutor(tutor_slug)
     cartesia_speed = _cartesia_tts_speed_for_tutor(tutor_slug)
     llm_model = (os.getenv("OPENAI_LLM_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").strip()
@@ -580,20 +627,62 @@ def _build_agent_session(*, tutor_slug: str, use_avatar: bool) -> AgentSession:
             f"OPENAI_LLM_MODEL={llm_model!r} is a Realtime speech model, not a chat completions model. "
             "Set OPENAI_LLM_MODEL to a chat model (e.g. gpt-4.1-mini, gpt-4o-mini)."
         )
+
+    keyterms = _deepgram_keyterms(fixed_words)
+    endpointing_ms = _deepgram_endpointing_ms()
+    smart_format = (os.getenv("DEEPGRAM_SMART_FORMAT", "0") or "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    filler_words_enabled = (
+        os.getenv("DEEPGRAM_FILLER_WORDS", "1") or "1"
+    ).strip().lower() in ("1", "true", "yes", "on")
+
     logger.info(
-        "Voice pipeline: Deepgram STT model=%s language=%s | Cartesia TTS model=%s voice=%s speed=%s | OpenAI LLM=%s",
+        "Voice pipeline: Deepgram STT model=%s language=%s endpointing=%dms keyterms=%d "
+        "smart_format=%s filler_words=%s | Cartesia TTS model=%s voice=%s speed=%s | OpenAI LLM=%s",
         deepgram_model,
-        stt_language,
+        deepgram_language,
+        endpointing_ms,
+        len(keyterms),
+        smart_format,
+        filler_words_enabled,
         tts_model,
         cartesia_voice,
         cartesia_speed,
         llm_model,
     )
+    if keyterms:
+        logger.info("Deepgram keyterm boost (%d words): %s", len(keyterms), keyterms)
+
+    stt_kwargs: dict = {
+        "model": deepgram_model,
+        "language": deepgram_language,
+        "endpointing_ms": endpointing_ms,
+        "smart_format": smart_format,
+        "filler_words": filler_words_enabled,
+    }
+    if keyterms:
+        # nova-3 family takes ``keyterm`` (no weight); nova-2 family takes ``keywords``
+        # as a list of (word, weight) tuples. Fall back to no-boost on unknown models.
+        model_lc = deepgram_model.lower()
+        if model_lc.startswith("nova-3"):
+            stt_kwargs["keyterm"] = keyterms
+        elif model_lc.startswith("nova-2"):
+            stt_kwargs["keywords"] = [(w, 1.5) for w in keyterms]
+        else:
+            logger.info(
+                "Skipping Deepgram keyterm boost — model %r does not advertise keyterm/keywords support",
+                deepgram_model,
+            )
+
     th = _kid_tutor_turn_handling(use_avatar=use_avatar)
     if th:
         logger.info("AgentSession turn_handling override: %s", th)
     kwargs: dict = {
-        "stt": deepgram.STT(model=deepgram_model, language=stt_language),
+        "stt": deepgram.STT(**stt_kwargs),
         "llm": openai.LLM(model=llm_model),
         "tts": cartesia.TTS(model=tts_model, voice=cartesia_voice, speed=cartesia_speed),
         "vad": silero.VAD.load(),
@@ -1095,7 +1184,11 @@ async def entrypoint(ctx: JobContext):
             api_secret=os.getenv("BITHUMAN_API_SECRET"),
         )
 
-    session = _build_agent_session(tutor_slug=tutor_slug, use_avatar=use_avatar)
+    session = _build_agent_session(
+        tutor_slug=tutor_slug,
+        use_avatar=use_avatar,
+        fixed_words=fixed_words,
+    )
     _register_voice_debug_handlers(ctx.room, session)
 
     # Wait for browser child_profile before greeting so REACT_APP_CARTESIA_VOICE_* applies to first speech.
@@ -1481,12 +1574,16 @@ async def entrypoint(ctx: JobContext):
             await transition_into_lesson("first_child_utterance", child_utterance=t0)
             return
         if pronunciation_score.should_skip_scoring(text):
+            logger.info(
+                "STT skipped (filler/skip-list, will be handled as chat by LLM): %r",
+                text,
+            )
             return
         if scoring_mute_until is not None:
             _now = time.monotonic()
             if _now < scoring_mute_until:
-                logger.debug(
-                    "pronunciation scoring suppressed (%.2fs left in anti-spurious STT window): %r",
+                logger.info(
+                    "STT skipped (scoring muted %.2fs to avoid echo): %r",
                     scoring_mute_until - _now,
                     text,
                 )
@@ -1499,8 +1596,8 @@ async def entrypoint(ctx: JobContext):
                 norm_key == last_stt_dedupe_key
                 and (_now - last_stt_dedupe_at) < _stt_final_dedupe_s()
             ):
-                logger.debug(
-                    "ignoring duplicate STT final within %.1fs: %r",
+                logger.info(
+                    "STT skipped (duplicate within %.1fs): %r",
                     _now - last_stt_dedupe_at,
                     text,
                 )
@@ -1650,25 +1747,42 @@ async def entrypoint(ctx: JobContext):
         # "Are you ready?" — plain "yes"/"ok" are handled by should_skip_scoring; phrases
         # like "yes I'm ready" used to reach score_utterance and could mis-trigger advances.
         if pronunciation_score.looks_like_readiness_acknowledgment(text, expected):
-            logger.debug(
-                "readiness/meta reply — skipping pronunciation scoring: %r",
+            logger.info(
+                "STT routed to LLM (readiness/meta reply, expected=%r): %r",
+                expected,
                 text,
             )
             return
         # Only score if it actually looks like an attempt at the lesson word.
         # Conversational chat / questions are passed straight to the LLM untouched.
         if pronunciation_score.looks_like_chat(text):
-            logger.debug("transcript looks conversational, skipping pronunciation scoring: %r", text)
+            logger.info(
+                "STT routed to LLM (looks conversational, expected=%r): %r",
+                expected,
+                text,
+            )
             return
         result = pronunciation_score.score_utterance(expected, text, score_thresholds)
         if result["score"] < min_attempt_score:
-            logger.debug(
-                "low-similarity transcript (%s vs expected=%s, score=%s) — treating as chat",
-                result["best_token"],
+            logger.info(
+                "STT routed to LLM (low-similarity vs expected=%r: best_token=%r score=%s < min=%s): %r",
                 expected,
+                result["best_token"],
                 result["score"],
+                min_attempt_score,
+                text,
             )
             return
+        logger.info(
+            "STT scored: expected=%r heard=%r best_token=%r score=%s band=%s (mode=%s, word_index=%s)",
+            expected,
+            text,
+            result["best_token"],
+            result["score"],
+            result["band"],
+            mode,
+            scored_at_index,
+        )
         meta = lesson.record_score(result["score"], result["band"], result["best_token"])
         cue = avatar_cue_for_band(pron_rules, result["band"])
 
@@ -2008,18 +2122,34 @@ async def entrypoint(ctx: JobContext):
         t = (ev.transcript or "").strip()
         if t:
             asyncio.create_task(publish_input_speech_started_once())
+        log_transcripts = (
+            os.getenv("KID_TUTOR_LOG_TRANSCRIPTS", "1") or "1"
+        ).strip().lower() in ("1", "true", "yes", "on")
         if not ev.is_final:
+            if (
+                t
+                and log_transcripts
+                and (os.getenv("KID_TUTOR_LOG_INTERIM_TRANSCRIPTS", "0") or "0")
+                .strip()
+                .lower()
+                in ("1", "true", "yes", "on")
+            ):
+                logger.info(
+                    "STT interim (mode=%s, word_index=%s, expected=%r): %r",
+                    mode,
+                    lesson.word_index if lesson.words else None,
+                    lesson.expected_word(),
+                    t[:300] + ("…" if len(t) > 300 else ""),
+                )
             return
         if not t:
             return
-        if (os.getenv("KID_TUTOR_LOG_TRANSCRIPTS", "") or "").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        ):
+        if log_transcripts:
             logger.info(
-                "Cartesia STT final transcript (len=%d): %r",
+                "STT final (mode=%s, word_index=%s, expected=%r, len=%d): %r",
+                mode,
+                lesson.word_index if lesson.words else None,
+                lesson.expected_word(),
                 len(t),
                 t[:500] + ("…" if len(t) > 500 else ""),
             )
