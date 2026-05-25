@@ -75,6 +75,7 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     RunContext,
+    StopResponse,
     UserInputTranscribedEvent,
     WorkerOptions,
     WorkerType,
@@ -233,11 +234,61 @@ def _pick_tts_lesson_word_index(
 
 
 class _KidTutorAgent(Agent):
-    """Agent subclass that strips letter-by-letter spellings from TTS text."""
+    """Agent subclass that strips letter-by-letter spellings from TTS text.
 
-    def __init__(self, *args, picture_sync_from_tts=None, **kwargs):
+    Also routes lesson-mode user turns through an entrypoint-supplied async
+    callback before the framework's automatic LLM reply runs. The callback
+    (``process_user_turn``) executes inside ``on_user_turn_completed``, which
+    is called by the framework AFTER it interrupts ``current_speech`` for the
+    end-of-turn (see ``AgentActivity._commit_user_turn``). Doing our scoring
+    and ``session.generate_reply`` work here — instead of from a parallel task
+    spawned in ``user_input_transcribed`` — ensures our scripted speech is
+    *not* the speech the framework picks up as ``current_speech`` and kills.
+
+    After the callback runs we raise ``StopResponse`` to skip the framework's
+    own auto-reply, guaranteeing one reply per child utterance. Without this,
+    two TTS streams could overlap (e.g. "WOW! Perfect rabbit, … hop or fly?"
+    interleaved with "Yay! Is rabbit big or small?").
+    """
+
+    def __init__(
+        self,
+        *args,
+        picture_sync_from_tts=None,
+        process_user_turn=None,
+        suppress_auto_reply=None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self._picture_sync_from_tts = picture_sync_from_tts
+        self._process_user_turn = process_user_turn
+        self._suppress_auto_reply = suppress_auto_reply
+
+    async def on_user_turn_completed(self, turn_ctx, new_message) -> None:  # type: ignore[override]
+        """Run the entrypoint's lesson-turn handler, then suppress auto-reply.
+
+        Order matters: at this point the framework has already finished
+        ``current_speech.interrupt()`` for the end-of-turn. Any speech we queue
+        here via ``session.generate_reply`` is safe from that interrupt.
+        """
+        suppress = False
+        if self._suppress_auto_reply is not None:
+            try:
+                suppress = bool(self._suppress_auto_reply())
+            except Exception as e:
+                logger.debug("suppress_auto_reply callback raised: %s", e)
+
+        if suppress and self._process_user_turn is not None:
+            text = (new_message.text_content or "").strip() if new_message else ""
+            try:
+                await self._process_user_turn(text, turn_ctx, new_message)
+            except StopResponse:
+                raise
+            except Exception as e:
+                logger.warning("process_user_turn callback failed: %s", e, exc_info=True)
+
+        if suppress:
+            raise StopResponse()
 
     def tts_node(self, text, model_settings):
         sync_fn = self._picture_sync_from_tts
@@ -482,11 +533,56 @@ def _cartesia_tts_speed_for_tutor(tutor_slug: str) -> float:
 _hydrate_tutor_cartesia_voices()
 
 
+def _avatar_audio_delay_s(tutor_slug: str | None = None) -> float:
+    """Delay (seconds) applied to the room audio path to align with BitHuman video.
+
+    BitHuman's ``expression`` model produces richer facial expressions but its cloud
+    inference adds ~200–800 ms before the matching video frames are published. The
+    room (Cartesia) audio path is near-instant, so audio arrives at the child's
+    speakers before the avatar's mouth/face animates → "lagging mouth".
+
+    Look-up order (first non-empty wins):
+      1. ``AVATAR_AUDIO_DELAY_MS_<SLUG>``    — per-tutor (e.g. ``..._LEO=450``).
+      2. ``AVATAR_AUDIO_DELAY_MS``           — global default.
+      3. Built-in default: 350 ms (a safe starting point for ``expression`` model).
+
+    Tune by ear — the right value depends on BitHuman load + network jitter. If
+    audio still leads the face, bump it up. If audio trails the face (you see
+    the mouth move *before* you hear it), drop it down.
+    """
+    slug = (tutor_slug or "").strip().upper()
+    raw = ""
+    if slug:
+        raw = (os.getenv(f"AVATAR_AUDIO_DELAY_MS_{slug}", "") or "").strip()
+    if not raw:
+        raw = (os.getenv("AVATAR_AUDIO_DELAY_MS", "") or "").strip()
+    if not raw:
+        # No env override — apply a sensible default. 350 ms is a typical landing
+        # zone for BITHUMAN_MODEL=expression over good wifi; user can lower for
+        # essence (50–100 ms) via the env knob.
+        return 0.35
+    try:
+        ms = max(0, min(2000, int(float(raw))))
+        return ms / 1000.0
+    except ValueError:
+        logger.warning(
+            "Invalid AVATAR_AUDIO_DELAY_MS%s=%r — ignored (using 0.35s)",
+            f"_{slug}" if slug else "",
+            raw,
+        )
+        return 0.35
+
+
 class _DualCartesiaAudioOutput(agent_io.AudioOutput):
     """Play Cartesia TTS in the room (Sonic voice) and mirror to BitHuman for lip-sync.
 
     BitHuman cloud re-voices audio with the voice baked into each bithuman.ai agent;
     the child must hear the agent worker track (room sink), not the avatar participant.
+
+    Optional A/V-sync delay (``AVATAR_AUDIO_DELAY_MS``): queues frames for the room
+    sink and releases them ``delay_s`` later so the audio lands at the same wall-clock
+    time as BitHuman's avatar video frames. BitHuman receives audio with zero
+    additional delay so its cloud has the full lead-time it needs to render video.
     """
 
     def __init__(
@@ -494,6 +590,7 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
         *,
         room_sink: agent_io.AudioOutput,
         bithuman_sink: agent_io.AudioOutput,
+        delay_s: float = 0.0,
     ) -> None:
         super().__init__(
             label="CartesiaDual",
@@ -505,6 +602,14 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
         )
         self._room_sink = room_sink
         self._bithuman_sink = bithuman_sink
+        self._delay_s = max(0.0, float(delay_s))
+        self._room_queue: asyncio.Queue[tuple[float, rtc.AudioFrame | None]] | None = None
+        self._room_worker: asyncio.Task | None = None
+        if self._delay_s > 0:
+            self._room_queue = asyncio.Queue()
+            self._room_worker = asyncio.create_task(
+                self._delayed_room_worker(), name="cartesia_room_delay"
+            )
 
         # Forward playback_finished from the room sink up to this object so that
         # AgentSession.wait_for_playout() resolves and the INTERRUPTION_TIMEOUT is
@@ -518,12 +623,46 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
             ),
         )
 
+    async def _delayed_room_worker(self) -> None:
+        """Background worker that forwards frames to the room sink after ``delay_s``."""
+        assert self._room_queue is not None
+        try:
+            while True:
+                enq_ts, frame = await self._room_queue.get()
+                if frame is None:
+                    # sentinel from clear_buffer — drain whatever else is sitting in
+                    # the queue without forwarding (audio for the interrupted speech
+                    # would otherwise leak through the delay buffer after interrupt).
+                    while not self._room_queue.empty():
+                        try:
+                            self._room_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    continue
+                wait = (enq_ts + self._delay_s) - time.monotonic()
+                if wait > 0:
+                    try:
+                        await asyncio.sleep(wait)
+                    except asyncio.CancelledError:
+                        raise
+                try:
+                    await self._room_sink.capture_frame(frame)
+                except Exception as e:
+                    logger.debug("delayed room capture_frame: %s", e)
+        except asyncio.CancelledError:
+            return
+
     async def capture_frame(self, frame: rtc.AudioFrame) -> None:
         await super().capture_frame(frame)
-        await asyncio.gather(
-            self._room_sink.capture_frame(frame),
-            self._bithuman_sink.capture_frame(frame),
-        )
+        # BitHuman gets the frame immediately (cloud inference is the slow path).
+        bithuman_task = self._bithuman_sink.capture_frame(frame)
+        if self._room_queue is not None:
+            # Room frames are queued and released after ``_delay_s`` so the child
+            # hears each chunk at the same moment its lip-sync video lands.
+            await self._room_queue.put((time.monotonic(), frame))
+            await bithuman_task
+        else:
+            await asyncio.gather(self._room_sink.capture_frame(frame), bithuman_task)
 
     def flush(self) -> None:
         super().flush()
@@ -532,6 +671,16 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
 
     def clear_buffer(self) -> None:
         super().clear_buffer()
+        if self._room_queue is not None:
+            # Drop everything that was waiting to be forwarded — the upstream speech
+            # has been interrupted, so playing the buffered tail would talk over the
+            # next reply. Sentinel ``None`` lets the worker reset cleanly.
+            while not self._room_queue.empty():
+                try:
+                    self._room_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            self._room_queue.put_nowait((time.monotonic(), None))
         self._room_sink.clear_buffer()
         self._bithuman_sink.clear_buffer()
 
@@ -544,6 +693,8 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
         super().on_detached()
         self._room_sink.on_detached()
         self._bithuman_sink.on_detached()
+        if self._room_worker is not None and not self._room_worker.done():
+            self._room_worker.cancel()
 
     def pause(self) -> None:
         super().pause()
@@ -1179,9 +1330,30 @@ async def entrypoint(ctx: JobContext):
 
     avatar = None
     if use_avatar:
+        # BitHuman "model": "essence" (default) = predefined actions + lip-sync only;
+        # "expression" = dynamic, content-driven facial expressions (eyebrows, eyes,
+        # head motion). Override per-tutor via BITHUMAN_MODEL_<SLUG> or globally via
+        # BITHUMAN_MODEL.
+        bh_model = (
+            os.getenv(f"BITHUMAN_MODEL_{(tutor_slug or 'leo').upper()}", "").strip()
+            or os.getenv("BITHUMAN_MODEL", "").strip()
+            or "expression"
+        ).lower()
+        if bh_model not in ("expression", "essence"):
+            logger.warning(
+                "Unknown BITHUMAN_MODEL=%r — falling back to 'expression'", bh_model
+            )
+            bh_model = "expression"
+        logger.info(
+            "BitHuman avatar: avatar_id=%s model=%s tutor=%s",
+            avatar_id,
+            bh_model,
+            tutor_slug or "leo",
+        )
         avatar = bithuman.AvatarSession(
             avatar_id=avatar_id,
             api_secret=os.getenv("BITHUMAN_API_SECRET"),
+            model=bh_model,
         )
 
     session = _build_agent_session(
@@ -1466,10 +1638,39 @@ async def entrypoint(ctx: JobContext):
         lesson_tools.append(go_to_next_lesson_word)
         lesson_tools.append(sync_lesson_picture_index)
 
+    def _should_suppress_auto_reply() -> bool:
+        """Block the framework's automatic LLM reply for vocabulary / speaking modes.
+
+        Every reply (greeting, lesson handoff, scoring, comprehension nudge,
+        chat-routed responses) is issued explicitly via ``session.generate_reply``
+        from this entrypoint. Suppressing the auto-reply guarantees one — and
+        only one — TTS stream per child utterance.
+        """
+        return mode in ("vocabulary", "speaking")
+
+    async def _process_user_turn(text: str, turn_ctx, new_message) -> None:
+        """Handle a child utterance from inside ``on_user_turn_completed``.
+
+        Running here (rather than via a parallel task spawned from the
+        ``user_input_transcribed`` event) is intentional: by this point the
+        framework has finished its end-of-turn ``current_speech.interrupt()``,
+        so any ``session.generate_reply`` we issue produces a speech that the
+        framework will NOT immediately interrupt. Doing this work in a parallel
+        task created our previous "speech_created → silence → clear buffer"
+        race where our just-queued speech became the framework's
+        ``current_speech`` and was killed on the same turn.
+        """
+        try:
+            await handle_final_transcript(text)
+        except Exception as e:
+            logger.warning("handle_final_transcript from on_user_turn_completed failed: %s", e, exc_info=True)
+
     kid_agent = _KidTutorAgent(
         instructions=full_instructions(),
         tools=lesson_tools,
         picture_sync_from_tts=_maybe_sync_picture_from_tts,
+        suppress_auto_reply=_should_suppress_auto_reply,
+        process_user_turn=_process_user_turn,
     )
 
     async def refresh_agent_instructions() -> None:
@@ -1522,8 +1723,8 @@ async def entrypoint(ctx: JobContext):
                 "question about the word after they repeat it. 2–3 short sentences."
             )
         try:
-            session.generate_reply(
-                instructions=(
+            gen_kwargs: dict = {
+                "instructions": (
                     stt_hint
                     + "Acknowledge what the child just said in ONE short, warm sentence in "
                     "your tutor voice (no name-asking, no new opener question). "
@@ -1534,7 +1735,10 @@ async def entrypoint(ctx: JobContext):
                     "Do NOT mention any other vocabulary words from the list. "
                     "Do NOT skip past this word — wait for them to attempt it before moving on."
                 ),
-            )
+            }
+            if cu:
+                gen_kwargs["user_input"] = cu
+            session.generate_reply(**gen_kwargs)
             # Block scoring for a few seconds: STT often emits a junk "final" right
             # after the model speaks, which can match the target word and auto-advance.
             _extend_scoring_mute(_post_intro_scoring_mute_s())
@@ -1545,6 +1749,43 @@ async def entrypoint(ctx: JobContext):
             )
         except Exception as e:
             logger.warning("transition_into_lesson generate_reply failed: %s", e)
+
+    def _safe_generate_chat_reply(
+        text: str,
+        reason: str,
+        *,
+        expected: str | None = None,
+        extra: str = "",
+    ) -> None:
+        """Issue a single LLM-driven reply for non-pronunciation transcripts.
+
+        Replaces the framework's automatic turn-taking response (now suppressed by
+        ``_KidTutorAgent.on_user_turn_completed``). We control exactly one reply
+        per transcript so two streams can never overlap on the same word.
+
+        ``user_input=text`` is REQUIRED here: when StopResponse cancels the
+        framework's auto-reply, the child's utterance is *not* appended to
+        ``Agent.chat_ctx``. Passing ``user_input`` injects it for this turn so
+        the LLM sees a fresh user message and actually produces output (without
+        it the LLM sees the previous tutor turn as the most recent message and
+        often generates an empty response).
+        """
+        try:
+            instructions = (
+                f'The child just said: "{text}".'
+                f' (Reason routed to LLM: {reason}.) '
+                "Respond in your tutor voice in ONE or TWO short sentences for a 3–7 year old. "
+                "Stay on the current lesson — never introduce a new vocabulary word."
+            )
+            if expected:
+                instructions += f' The current target word is "{expected}".'
+            if extra:
+                instructions += f" {extra}"
+            session.generate_reply(user_input=text, instructions=instructions)
+        except Exception as e:
+            logger.warning(
+                "chat-path generate_reply failed (%s): %s", reason, e
+            )
 
     async def handle_final_transcript(text: str) -> None:
         if mode not in ("vocabulary", "speaking"):
@@ -1575,9 +1816,10 @@ async def entrypoint(ctx: JobContext):
             return
         if pronunciation_score.should_skip_scoring(text):
             logger.info(
-                "STT skipped (filler/skip-list, will be handled as chat by LLM): %r",
+                "STT skipped (filler/skip-list, replying conversationally as chat): %r",
                 text,
             )
+            _safe_generate_chat_reply(text, "filler")
             return
         if scoring_mute_until is not None:
             _now = time.monotonic()
@@ -1607,22 +1849,61 @@ async def entrypoint(ctx: JobContext):
 
         # Vocabulary: pronunciation passed — next child reply is a comprehension answer (not scored as chat).
         if mode == "vocabulary" and lesson.vocab_awaiting_comprehension:
+            exp_now = lesson.expected_word()
+
+            async def _suppress_dup_reply_and_nudge(reason: str) -> None:
+                """Cancel the framework's auto-reply and emit a SHORT comprehension nudge.
+
+                Without this, repeating the just-said lesson word (or a filler) lets the
+                LLM auto-reply re-introduce the word — producing the "tutor repeats the
+                same word twice" effect the user sees in the log around fish→fish.
+                """
+                if not scoring_reply_enabled:
+                    return
+                try:
+                    await asyncio.wait_for(
+                        session.interrupt(force=False),
+                        timeout=_scoring_interrupt_wait_cap_s(),
+                    )
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.debug("comprehension dup interrupt: %s", e)
+                await asyncio.sleep(0.05)
+                try:
+                    session.generate_reply(
+                        user_input=text,
+                        instructions=(
+                            f'The child just {reason} during the comprehension question for '
+                            f'"{exp_now or "the current word"}". Do NOT reintroduce or re-explain '
+                            f'"{exp_now or "the word"}". In ONE short, warm sentence, gently re-ask '
+                            "your last comprehension question (yes/no, A/B, where does it live?) "
+                            "and wait. Maximum 1 sentence."
+                        ),
+                    )
+                except Exception as e:
+                    logger.warning("generate_reply after comprehension dup: %s", e)
+
             if pending_advance_trigger_norm and norm_key == pending_advance_trigger_norm:
-                logger.debug(
-                    "duplicate STT after vocabulary pronunciation — ignore: %r",
+                logger.info(
+                    "STT skipped (child re-said the just-correct word during comprehension wait): %r",
                     text,
                 )
+                await _suppress_dup_reply_and_nudge("re-said the lesson word")
                 return
             if pronunciation_score.should_skip_scoring(text):
+                logger.info(
+                    "STT skipped (filler/skip-list during comprehension wait): %r",
+                    text,
+                )
+                await _suppress_dup_reply_and_nudge("gave a short filler reply")
                 return
-            exp_now = lesson.expected_word()
             if exp_now and pronunciation_score.looks_like_readiness_acknowledgment(
                 text, exp_now
             ):
-                logger.debug(
-                    "readiness during vocabulary comprehension wait — ignore: %r",
+                logger.info(
+                    "STT skipped (readiness/meta reply during comprehension wait): %r",
                     text,
                 )
+                await _suppress_dup_reply_and_nudge("gave a readiness/meta reply")
                 return
             pidx = lesson.pending_advance_to_index
             next_w: str | None = None
@@ -1654,6 +1935,7 @@ async def entrypoint(ctx: JobContext):
                 try:
                     if next_w:
                         session.generate_reply(
+                            user_input=text,
                             instructions=(
                                 f'They answered your quick question about "{exp_now or "the word"}" '
                                 f'(child said: "{text}"). Celebrate briefly, then teach the next word '
@@ -1664,6 +1946,7 @@ async def entrypoint(ctx: JobContext):
                         )
                     elif exp_now:
                         session.generate_reply(
+                            user_input=text,
                             instructions=(
                                 f'They answered about "{exp_now}". One warm sentence of praise — '
                                 "all lesson words are done."
@@ -1677,10 +1960,18 @@ async def entrypoint(ctx: JobContext):
         # a correct score (speaking defer / KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE).
         if lesson.pending_advance_to_index is not None:
             if pending_advance_trigger_norm and norm_key == pending_advance_trigger_norm:
-                logger.debug(
-                    "duplicate STT final for deferred advance (same as correct utterance) — ignore: %r",
+                logger.info(
+                    "STT skipped (child re-said the just-correct word during deferred advance): %r",
                     text,
                 )
+                if scoring_reply_enabled:
+                    try:
+                        await asyncio.wait_for(
+                            session.interrupt(force=False),
+                            timeout=_scoring_interrupt_wait_cap_s(),
+                        )
+                    except (asyncio.TimeoutError, Exception) as e:
+                        logger.debug("deferred dup interrupt: %s", e)
                 return
             pidx = lesson.pending_advance_to_index
             if lesson.words and 0 <= pidx < len(lesson.words):
@@ -1752,6 +2043,7 @@ async def entrypoint(ctx: JobContext):
                 expected,
                 text,
             )
+            _safe_generate_chat_reply(text, "readiness", expected=expected)
             return
         # Only score if it actually looks like an attempt at the lesson word.
         # Conversational chat / questions are passed straight to the LLM untouched.
@@ -1761,6 +2053,7 @@ async def entrypoint(ctx: JobContext):
                 expected,
                 text,
             )
+            _safe_generate_chat_reply(text, "chat", expected=expected)
             return
         result = pronunciation_score.score_utterance(expected, text, score_thresholds)
         if result["score"] < min_attempt_score:
@@ -1771,6 +2064,17 @@ async def entrypoint(ctx: JobContext):
                 result["score"],
                 min_attempt_score,
                 text,
+            )
+            _safe_generate_chat_reply(
+                text,
+                "low_similarity",
+                expected=expected,
+                extra=(
+                    f' Their speech was not a clear attempt at "{expected}" '
+                    f'(scored {result["score"]}/100). Reply naturally to what they said in '
+                    "ONE short sentence, then gently invite them back to say "
+                    f'"{expected}".'
+                ),
             )
             return
         logger.info(
@@ -1979,6 +2283,7 @@ async def entrypoint(ctx: JobContext):
                 else:
                     transition = ""
                 session.generate_reply(
+                    user_input=text,
                     instructions=(
                         f"Pronunciation check just ran. Target word: \"{expected}\". "
                         f"Child transcript: \"{text}\". "
@@ -2118,42 +2423,51 @@ async def entrypoint(ctx: JobContext):
         await refresh_agent_instructions()
         logger.info("lesson index from UI: %s (topic=%s)", lesson.word_index, topic_slug)
 
+    last_stt_interim_logged: str = ""
+
     def _on_user_input_transcribed(ev: UserInputTranscribedEvent) -> None:
+        nonlocal last_stt_interim_logged
         t = (ev.transcript or "").strip()
         if t:
             asyncio.create_task(publish_input_speech_started_once())
         log_transcripts = (
             os.getenv("KID_TUTOR_LOG_TRANSCRIPTS", "1") or "1"
         ).strip().lower() in ("1", "true", "yes", "on")
+        log_interim = (
+            os.getenv("KID_TUTOR_LOG_INTERIM_TRANSCRIPTS", "1") or "1"
+        ).strip().lower() in ("1", "true", "yes", "on")
         if not ev.is_final:
-            if (
-                t
-                and log_transcripts
-                and (os.getenv("KID_TUTOR_LOG_INTERIM_TRANSCRIPTS", "0") or "0")
-                .strip()
-                .lower()
-                in ("1", "true", "yes", "on")
-            ):
-                logger.info(
-                    "STT interim (mode=%s, word_index=%s, expected=%r): %r",
-                    mode,
-                    lesson.word_index if lesson.words else None,
-                    lesson.expected_word(),
-                    t[:300] + ("…" if len(t) > 300 else ""),
-                )
+            if t and log_transcripts and log_interim:
+                if t != last_stt_interim_logged:
+                    last_stt_interim_logged = t
+                    snippet = t[:300] + ("…" if len(t) > 300 else "")
+                    logger.info("stt_chunk raw: %r", snippet)
             return
         if not t:
             return
         if log_transcripts:
+            normalized = pronunciation_score.transcript_dedupe_key(t) or t.lower()
+            snippet = t[:500] + ("…" if len(t) > 500 else "")
+            logger.info("stt_chunk final raw: %r", snippet)
+            if normalized.strip() and normalized.strip() != t.strip():
+                logger.info("stt fix applied: %r → %r", t.strip(), normalized.strip())
             logger.info(
                 "STT final (mode=%s, word_index=%s, expected=%r, len=%d): %r",
                 mode,
                 lesson.word_index if lesson.words else None,
                 lesson.expected_word(),
                 len(t),
-                t[:500] + ("…" if len(t) > 500 else ""),
+                snippet,
             )
-        asyncio.create_task(handle_final_transcript(t))
+        last_stt_interim_logged = ""
+        # NOTE: For vocabulary / speaking modes the actual transcript handling is
+        # invoked from ``_KidTutorAgent.on_user_turn_completed`` → ``_process_user_turn``
+        # so that our ``session.generate_reply`` runs *after* the framework's
+        # end-of-turn ``current_speech.interrupt()`` and is not killed by it.
+        # For other modes (e.g. quiz) we still spawn a parallel task because we
+        # rely on the framework's auto-reply rather than a scripted reply.
+        if mode not in ("vocabulary", "speaking"):
+            asyncio.create_task(handle_final_transcript(t))
 
     def _on_data_received(dp: rtc.DataPacket) -> None:
         asyncio.create_task(handle_room_data(dp))
@@ -2196,11 +2510,20 @@ async def entrypoint(ctx: JobContext):
             and bithuman_sink is not None
             and pre_avatar_room_audio_head is not bithuman_sink
         ):
+            av_delay = _avatar_audio_delay_s(tutor_slug)
             session.output.audio = _DualCartesiaAudioOutput(
                 room_sink=pre_avatar_room_audio_head,
                 bithuman_sink=bithuman_sink,
+                delay_s=av_delay,
             )
             session.output.audio.on_attached()
+            if av_delay > 0:
+                logger.info(
+                    "Cartesia → room audio delayed by %.0f ms (tutor=%s, BitHuman model=%s) for A/V sync",
+                    av_delay * 1000,
+                    tutor_slug or "leo",
+                    bh_model,
+                )
         elif pre_avatar_room_audio_head is None:
             logger.error(
                 "BitHuman avatar on but session.output.audio is missing before avatar.start — "
