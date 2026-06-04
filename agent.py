@@ -66,6 +66,7 @@ import logging
 import os
 import re
 import sys
+import contextlib
 import time
 
 from dotenv import load_dotenv
@@ -88,6 +89,7 @@ from livekit.plugins import bithuman, cartesia, deepgram, openai, silero
 
 from curriculum import words_for_topic
 from kid_lesson_session import KidLessonSession
+from logger import LatencyLogger
 import pronunciation_score
 from prompt_config import (
     build_kid_tutor_instructions,
@@ -271,6 +273,12 @@ class _KidTutorAgent(Agent):
         ``current_speech.interrupt()`` for the end-of-turn. Any speech we queue
         here via ``session.generate_reply`` is safe from that interrupt.
         """
+        # Cap chat history before the LLM call so each turn's input token
+        # count stays bounded (otherwise the context grows ~50 tokens/turn).
+        # KID_TUTOR_CHAT_HISTORY_TURNS env var (default 6) controls the cap;
+        # we keep the system message + the most-recent N user/assistant pairs.
+        await self._truncate_chat_ctx_if_needed()
+
         suppress = False
         if self._suppress_auto_reply is not None:
             try:
@@ -290,13 +298,47 @@ class _KidTutorAgent(Agent):
         if suppress:
             raise StopResponse()
 
+    async def _truncate_chat_ctx_if_needed(self) -> None:
+        """Cap ``chat_ctx`` so each LLM request stays bounded in tokens.
+
+        Uses ``ChatContext.truncate(max_items=N)`` which preserves the
+        leading system/developer instructions and strips dangling
+        function-call items. ``KID_TUTOR_CHAT_HISTORY_TURNS`` controls N
+        (default 6 turns ≈ 12 messages); set to 0 to disable.
+        """
+        try:
+            raw = os.getenv("KID_TUTOR_CHAT_HISTORY_TURNS", "6") or "6"
+            max_turns = int(raw)
+        except ValueError:
+            max_turns = 6
+        if max_turns <= 0:
+            return
+        # +1 for the system/developer message that ``truncate`` re-prepends.
+        max_items = max_turns * 2 + 1
+        try:
+            ctx = self.chat_ctx
+            if len(ctx.items) <= max_items:
+                return
+            new_ctx = ctx.copy()
+            new_ctx.truncate(max_items=max_items)
+            await self.update_chat_ctx(new_ctx)
+            logger.debug(
+                "chat_ctx truncated to last %d items (~%d turns + system)",
+                max_items,
+                max_turns,
+            )
+        except Exception as e:
+            logger.debug("chat_ctx truncate skipped (non-fatal): %s", e)
+
     def tts_node(self, text, model_settings):
         sync_fn = self._picture_sync_from_tts
 
         async def _filtered():
             buffer = ""
+            log_chunks = not _perf_only_logs()
             async for chunk in text:
-                logger.info("tts_chunk raw: %r", chunk)
+                if log_chunks:
+                    logger.info("tts_chunk raw: %r", chunk)
                 buffer += chunk
                 # Flush on sentence boundary or when buffer grows large
                 if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 100:
@@ -533,6 +575,28 @@ def _cartesia_tts_speed_for_tutor(tutor_slug: str) -> float:
 _hydrate_tutor_cartesia_voices()
 
 
+def _perf_only_logs() -> bool:
+    """When True, suppress all verbose transcript / TTS-chunk logs.
+
+    Set ``KID_TUTOR_LOG_PERF_ONLY=1`` in ``.env`` to mute:
+      * ``stt_chunk raw:`` / ``stt_chunk final raw:`` / ``stt fix applied:`` /
+        ``STT final (mode=…)``  — every "what the kid said" log line
+      * ``tts_chunk raw:`` / ``tts fix applied:``                         — every
+        outgoing TTS chunk text line
+
+    The ``[Latency]`` lines from ``logger.LatencyLogger`` and ``ERROR`` /
+    ``WARNING`` lines are NOT affected — you still get the timing data and any
+    real failures. This is a single-knob shortcut so you don't have to flip
+    three separate env vars when running a perf-measurement session.
+    """
+    return (os.getenv("KID_TUTOR_LOG_PERF_ONLY", "0") or "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def _avatar_audio_delay_s(tutor_slug: str | None = None) -> float:
     """Delay (seconds) applied to the room audio path to align with BitHuman video.
 
@@ -585,6 +649,13 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
     additional delay so its cloud has the full lead-time it needs to render video.
     """
 
+    # Sentinel objects passed through the delay queue so the worker can apply
+    # ``flush`` and ``clear_buffer`` in the same FIFO order as the audio frames.
+    # ``object()`` identity comparison is faster and unambiguous compared to a
+    # string/None marker (audio frames will never compare equal to these).
+    _CLEAR_SENTINEL = object()
+    _FLUSH_SENTINEL = object()
+
     def __init__(
         self,
         *,
@@ -603,7 +674,25 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
         self._room_sink = room_sink
         self._bithuman_sink = bithuman_sink
         self._delay_s = max(0.0, float(delay_s))
-        self._room_queue: asyncio.Queue[tuple[float, rtc.AudioFrame | None]] | None = None
+        # Per-segment bookkeeping. ``_segment_pushed_s`` accumulates the audio
+        # duration we forwarded since the last flush/clear; ``_segment_finished``
+        # makes our ``on_playback_finished`` idempotent so we can fire it eagerly
+        # on ``clear_buffer`` (interrupt) without double-counting when the room
+        # sink later emits its own ``playback_finished``.
+        self._segment_pushed_s: float = 0.0
+        self._segment_finished: bool = True  # idle (no segment) until first frame
+
+        # Queue items: (enqueue_ts, payload) where payload is one of:
+        #   rtc.AudioFrame  → deliver this frame to room_sink after delay_s
+        #   _CLEAR          → drop everything waiting (interruption)
+        #   _FLUSH          → call room_sink.flush() AFTER all preceding frames
+        # Using sentinels (not None / strings) avoids isinstance ambiguity and
+        # prevents the "capture_frame called while flush is in progress" race
+        # on the room sink: a synchronous self._room_sink.flush() would mark
+        # the room sink as flushing while delayed frames still need to land.
+        self._room_queue: (
+            asyncio.Queue[tuple[float, rtc.AudioFrame | object]] | None
+        ) = None
         self._room_worker: asyncio.Task | None = None
         if self._delay_s > 0:
             self._room_queue = asyncio.Queue()
@@ -611,34 +700,56 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
                 self._delayed_room_worker(), name="cartesia_room_delay"
             )
 
-        # Forward playback_finished from the room sink up to this object so that
-        # AgentSession.wait_for_playout() resolves and the INTERRUPTION_TIMEOUT is
-        # cancelled. Without this, _DualCartesiaAudioOutput.on_playback_finished()
-        # is never called and "speech not done in time" fires after 15 s every time.
+        # Forward room_sink's playback_finished — but only if our own
+        # clear_buffer hasn't already fired playback_finished for this segment.
+        # Without this guard, an interrupt would double-fire and emit the
+        # ``playback_finished called more times than segments`` warning.
         room_sink.on(
             "playback_finished",
-            lambda ev: self.on_playback_finished(
-                playback_position=ev.playback_position,
-                interrupted=ev.interrupted,
-            ),
+            lambda ev: self._forward_room_playback_finished(ev),
+        )
+
+    def _forward_room_playback_finished(self, ev) -> None:
+        if self._segment_finished:
+            return
+        self._segment_finished = True
+        self.on_playback_finished(
+            playback_position=ev.playback_position,
+            interrupted=ev.interrupted,
         )
 
     async def _delayed_room_worker(self) -> None:
-        """Background worker that forwards frames to the room sink after ``delay_s``."""
+        """Background worker: applies frames / flush / clear-buffer in FIFO order."""
         assert self._room_queue is not None
         try:
             while True:
-                enq_ts, frame = await self._room_queue.get()
-                if frame is None:
-                    # sentinel from clear_buffer — drain whatever else is sitting in
-                    # the queue without forwarding (audio for the interrupted speech
-                    # would otherwise leak through the delay buffer after interrupt).
+                enq_ts, payload = await self._room_queue.get()
+
+                if payload is self._CLEAR_SENTINEL:
+                    # Interruption: drop every queued frame and pending flush so we
+                    # never speak over the next reply. The room sink itself was
+                    # already cleared synchronously by ``clear_buffer()``.
                     while not self._room_queue.empty():
                         try:
                             self._room_queue.get_nowait()
                         except asyncio.QueueEmpty:
                             break
                     continue
+
+                if payload is self._FLUSH_SENTINEL:
+                    # Forward flush ONLY now — i.e. AFTER every frame queued
+                    # before this flush has been delivered to the room sink.
+                    # Doing it here closes the race that previously caused
+                    # ``capture_frame called while flush is in progress`` on
+                    # the room sink (its ``_flush_task`` would otherwise still
+                    # be running when delayed frames arrived).
+                    try:
+                        self._room_sink.flush()
+                    except Exception as e:
+                        logger.debug("delayed room flush: %s", e)
+                    continue
+
+                # Normal audio frame: hold it until ``delay_s`` has elapsed.
                 wait = (enq_ts + self._delay_s) - time.monotonic()
                 if wait > 0:
                     try:
@@ -646,7 +757,7 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
                     except asyncio.CancelledError:
                         raise
                 try:
-                    await self._room_sink.capture_frame(frame)
+                    await self._room_sink.capture_frame(payload)
                 except Exception as e:
                     logger.debug("delayed room capture_frame: %s", e)
         except asyncio.CancelledError:
@@ -654,6 +765,18 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
 
     async def capture_frame(self, frame: rtc.AudioFrame) -> None:
         await super().capture_frame(frame)
+        # First frame of a new segment — reset bookkeeping.
+        if self._segment_finished:
+            self._segment_finished = False
+            self._segment_pushed_s = 0.0
+        # Track audio duration so an early interrupt can report a sane position.
+        try:
+            sr = float(getattr(frame, "sample_rate", 0)) or float(self.sample_rate or 0)
+            spc = float(getattr(frame, "samples_per_channel", 0))
+            if sr > 0 and spc > 0:
+                self._segment_pushed_s += spc / sr
+        except Exception:
+            pass
         # BitHuman gets the frame immediately (cloud inference is the slow path).
         bithuman_task = self._bithuman_sink.capture_frame(frame)
         if self._room_queue is not None:
@@ -666,23 +789,46 @@ class _DualCartesiaAudioOutput(agent_io.AudioOutput):
 
     def flush(self) -> None:
         super().flush()
-        self._room_sink.flush()
+        # BitHuman has no playback delay on our side, so flush it immediately.
         self._bithuman_sink.flush()
+        if self._room_queue is not None:
+            # Defer the room flush behind every pending frame so the room sink
+            # never sees ``capture_frame`` while its previous ``_flush_task``
+            # is still running.
+            self._room_queue.put_nowait((time.monotonic(), self._FLUSH_SENTINEL))
+        else:
+            self._room_sink.flush()
 
     def clear_buffer(self) -> None:
         super().clear_buffer()
         if self._room_queue is not None:
             # Drop everything that was waiting to be forwarded — the upstream speech
             # has been interrupted, so playing the buffered tail would talk over the
-            # next reply. Sentinel ``None`` lets the worker reset cleanly.
+            # next reply. Synchronous drain handles items already enqueued; the
+            # sentinel makes sure the worker resets even if it was mid-sleep.
             while not self._room_queue.empty():
                 try:
                     self._room_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-            self._room_queue.put_nowait((time.monotonic(), None))
+            self._room_queue.put_nowait((time.monotonic(), self._CLEAR_SENTINEL))
         self._room_sink.clear_buffer()
         self._bithuman_sink.clear_buffer()
+        # CRITICAL: fire on_playback_finished IMMEDIATELY so the framework's
+        # SpeechHandle.INTERRUPTION_TIMEOUT (15 s with BitHuman on) doesn't
+        # wait for the BitHuman cloud to ACK its clear-buffer RPC. Before this
+        # fix, every mid-speech interrupt produced a 13-15 s pause logged as
+        # ``speech not done in time after interruption, cancelling the speech
+        # arbitrarily``. Idempotent — guarded by ``_segment_finished``.
+        if not self._segment_finished:
+            self._segment_finished = True
+            try:
+                self.on_playback_finished(
+                    playback_position=self._segment_pushed_s,
+                    interrupted=True,
+                )
+            except Exception as e:
+                logger.debug("on_playback_finished from clear_buffer: %s", e)
 
     def on_attached(self) -> None:
         super().on_attached()
@@ -772,12 +918,33 @@ def _build_agent_session(
     ).strip()
     cartesia_voice = _cartesia_voice_for_tutor(tutor_slug)
     cartesia_speed = _cartesia_tts_speed_for_tutor(tutor_slug)
-    llm_model = (os.getenv("OPENAI_LLM_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").strip()
+    llm_model = (os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini") or "gpt-4o-mini").strip()
     if "realtime" in llm_model.lower():
         raise ValueError(
             f"OPENAI_LLM_MODEL={llm_model!r} is a Realtime speech model, not a chat completions model. "
-            "Set OPENAI_LLM_MODEL to a chat model (e.g. gpt-4.1-mini, gpt-4o-mini)."
+            "Set OPENAI_LLM_MODEL to a chat model (e.g. gpt-4o-mini, gpt-4.1-mini)."
         )
+
+    # OpenAI client tuning — kept loose enough to absorb a slow first-token but
+    # tight enough that a stalled request doesn't freeze the lesson.
+    #   • timeout=30s   → was the SDK default ~10s; long enough for occasional spikes.
+    #   • max_retries=2 → SDK default is 2; explicit so the worst case is bounded.
+    #   • prompt_cache_key=tutor_slug → lets OpenAI's prompt-prefix cache reuse
+    #     the system prompt across turns within the same tutor session.
+    try:
+        llm_timeout = float(os.getenv("OPENAI_LLM_TIMEOUT_S", "30") or "30")
+    except ValueError:
+        llm_timeout = 30.0
+    try:
+        llm_max_retries = int(os.getenv("OPENAI_LLM_MAX_RETRIES", "2") or "2")
+    except ValueError:
+        llm_max_retries = 2
+    llm_kwargs: dict = {
+        "model": llm_model,
+        "timeout": llm_timeout,
+        "max_retries": llm_max_retries,
+        "prompt_cache_key": tutor_slug or "kid_tutor",
+    }
 
     keyterms = _deepgram_keyterms(fixed_words)
     endpointing_ms = _deepgram_endpointing_ms()
@@ -793,7 +960,8 @@ def _build_agent_session(
 
     logger.info(
         "Voice pipeline: Deepgram STT model=%s language=%s endpointing=%dms keyterms=%d "
-        "smart_format=%s filler_words=%s | Cartesia TTS model=%s voice=%s speed=%s | OpenAI LLM=%s",
+        "smart_format=%s filler_words=%s | Cartesia TTS model=%s voice=%s speed=%s | "
+        "OpenAI LLM=%s timeout=%.1fs retries=%d cache_key=%s",
         deepgram_model,
         deepgram_language,
         endpointing_ms,
@@ -804,6 +972,9 @@ def _build_agent_session(
         cartesia_voice,
         cartesia_speed,
         llm_model,
+        llm_timeout,
+        llm_max_retries,
+        llm_kwargs["prompt_cache_key"],
     )
     if keyterms:
         logger.info("Deepgram keyterm boost (%d words): %s", len(keyterms), keyterms)
@@ -834,7 +1005,7 @@ def _build_agent_session(
         logger.info("AgentSession turn_handling override: %s", th)
     kwargs: dict = {
         "stt": deepgram.STT(**stt_kwargs),
-        "llm": openai.LLM(model=llm_model),
+        "llm": openai.LLM(**llm_kwargs),
         "tts": cartesia.TTS(model=tts_model, voice=cartesia_voice, speed=cartesia_speed),
         "vad": silero.VAD.load(),
     }
@@ -1362,6 +1533,44 @@ async def entrypoint(ctx: JobContext):
         fixed_words=fixed_words,
     )
     _register_voice_debug_handlers(ctx.room, session)
+
+    # Fire-and-forget LLM pre-warm — kicks off a tiny chat completion in
+    # parallel with avatar/STT setup so the OpenAI HTTPS connection is
+    # already established (and the request_id allocator warmed) by the time
+    # the proactive greeting fires. This typically shaves 800–1500 ms off
+    # the very first LLM TTFT a child sees. Skipped if KID_TUTOR_LLM_PREWARM=0.
+    if (os.getenv("KID_TUTOR_LLM_PREWARM", "1") or "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    ):
+        async def _prewarm_llm() -> None:
+            try:
+                from livekit.agents import llm as lk_llm
+                t0 = time.monotonic()
+                ctx_ = lk_llm.ChatContext()
+                ctx_.add_message(role="system", content="ping")
+                ctx_.add_message(role="user", content="hi")
+                stream = session.llm.chat(chat_ctx=ctx_)
+                async for _ in stream:
+                    break  # first token is enough — connection is hot
+                with contextlib.suppress(Exception):
+                    await stream.aclose()
+                logger.info(
+                    "LLM pre-warm done in %.0f ms (first real reply now uses warm connection)",
+                    (time.monotonic() - t0) * 1000.0,
+                )
+            except Exception as e:
+                logger.debug("LLM pre-warm failed (non-fatal): %s", e)
+
+        asyncio.create_task(_prewarm_llm(), name="llm_prewarm")
+
+    # Human-friendly STT / LLM / TTS / EOU latency logger (logger.LatencyLogger).
+    # Every turn prints aligned ``[Latency] STT/EOU/LLM/TTS/TURN`` lines plus a
+    # rolling 30 s ``[Latency] ROLLING`` average and a final ``[Latency] SESSION
+    # TOTALS`` snapshot on shutdown. Toggle via ``KID_TUTOR_LOG_PERF`` /
+    # ``KID_TUTOR_PERF_SUMMARY_S`` (see logger.py docstring).
+    latency_logger = LatencyLogger()
+    latency_logger.attach(session)
+    ctx.add_shutdown_callback(latency_logger.shutdown)
 
     # Wait for browser child_profile before greeting so REACT_APP_CARTESIA_VOICE_* applies to first speech.
     child_profile_received = asyncio.Event()
@@ -2402,6 +2611,32 @@ async def entrypoint(ctx: JobContext):
             )
             child_profile_received.set()
             return
+        if mtype == "lesson_leave":
+            # Frontend's Leave button signals it BEFORE unmounting LiveKitRoom.
+            # Tear everything down NOW so the worker is free for the next lesson
+            # without waiting for the framework's graceful drain on participant
+            # disconnect (~2 s session close + variable BitHuman cleanup).
+            logger.info(
+                "lesson_leave received from frontend — closing session immediately (reason=%r)",
+                msg.get("reason"),
+            )
+            try:
+                await asyncio.wait_for(
+                    session.interrupt(force=True), timeout=1.0
+                )
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug("lesson_leave interrupt: %s", e)
+            try:
+                await asyncio.wait_for(session.aclose(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug("lesson_leave session.aclose: %s", e)
+            # Trigger ctx.shutdown — this fires our shutdown callback
+            # (_close_avatar_on_shutdown) and tells the worker the job is done.
+            try:
+                ctx.shutdown(reason="lesson_leave")
+            except Exception as e:
+                logger.debug("lesson_leave ctx.shutdown: %s", e)
+            return
         if mtype != "lesson_index":
             return
         raw_idx = msg.get("index")
@@ -2430,12 +2665,19 @@ async def entrypoint(ctx: JobContext):
         t = (ev.transcript or "").strip()
         if t:
             asyncio.create_task(publish_input_speech_started_once())
-        log_transcripts = (
-            os.getenv("KID_TUTOR_LOG_TRANSCRIPTS", "1") or "1"
-        ).strip().lower() in ("1", "true", "yes", "on")
-        log_interim = (
-            os.getenv("KID_TUTOR_LOG_INTERIM_TRANSCRIPTS", "1") or "1"
-        ).strip().lower() in ("1", "true", "yes", "on")
+        # ``KID_TUTOR_LOG_PERF_ONLY=1`` is a single switch that overrides both
+        # the per-stream flags below — useful when running latency benchmarks
+        # so the log only shows ``[Latency]`` and errors.
+        if _perf_only_logs():
+            log_transcripts = False
+            log_interim = False
+        else:
+            log_transcripts = (
+                os.getenv("KID_TUTOR_LOG_TRANSCRIPTS", "1") or "1"
+            ).strip().lower() in ("1", "true", "yes", "on")
+            log_interim = (
+                os.getenv("KID_TUTOR_LOG_INTERIM_TRANSCRIPTS", "1") or "1"
+            ).strip().lower() in ("1", "true", "yes", "on")
         if not ev.is_final:
             if t and log_transcripts and log_interim:
                 if t != last_stt_interim_logged:
@@ -2503,6 +2745,11 @@ async def entrypoint(ctx: JobContext):
                 )
 
     if avatar is not None:
+        # Strict policy (per product decision): the lesson MUST NOT proceed
+        # without the avatar. If BitHuman fails to start (401, 402, 5xx,
+        # timeout, …), let the exception propagate so the job ends fast and
+        # the frontend can show "Waiting for {tutor}…". No silent fallback to
+        # voice-only here — the child should never see a faceless tutor.
         await avatar.start(session, room=ctx.room)
         bithuman_sink = session.output.audio
         if (
@@ -2532,6 +2779,34 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             "BitHuman lip-sync on; Cartesia plays on agent audio track (not bithuman-avatar-agent)"
         )
+
+        # Without this, when the child clicks Leave the framework closes the
+        # AgentSession but the BitHuman cloud avatar (its own LiveKit
+        # participant) lingers for ~20 s waiting on its grace timeout. During
+        # that window the worker can't pick up a new room → the next lesson
+        # shows a stuck "Waiting for {tutor}…" screen on the frontend.
+        async def _close_avatar_on_shutdown() -> None:
+            logger.info("Shutdown: closing BitHuman avatar session…")
+            try:
+                await asyncio.wait_for(avatar.aclose(), timeout=3.0)
+                logger.info("Shutdown: BitHuman avatar closed")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Shutdown: BitHuman avatar.aclose() exceeded 3 s — proceeding anyway"
+                )
+            except Exception as e:
+                logger.warning("Shutdown: BitHuman avatar.aclose() failed: %s", e)
+            try:
+                await asyncio.wait_for(ctx.delete_room(), timeout=3.0)
+                logger.info("Shutdown: LiveKit room deleted")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Shutdown: ctx.delete_room() exceeded 3 s — proceeding anyway"
+                )
+            except Exception as e:
+                logger.debug("Shutdown: ctx.delete_room() failed: %s", e)
+
+        ctx.add_shutdown_callback(_close_avatar_on_shutdown)
     else:
         logger.info("Starting session without bitHuman avatar pipeline")
 

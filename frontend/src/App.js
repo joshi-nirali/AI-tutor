@@ -369,15 +369,21 @@ export default function App() {
               childName={childName}
               tutorLabel={tutorLabel}
               onLeave={() => {
-                setScreen("home");
+                // Drop the child back on the categories grid for the same path
+                // (vocabulary / speaking / quiz) — the active mode is preserved
+                // so they can immediately pick another lesson theme without
+                // re-choosing the path. Unmounting this section cleanly
+                // disconnects the LiveKit room (the agent runs its shutdown
+                // callback, closing the BitHuman avatar within ~1 s).
+                setScreen("lesson");
                 setTopicSlug(null);
-                setMode(null);
               }}
               onLessonComplete={() => {
-                // All words finished — drop the child back on the categories
-                // grid for the same path (vocabulary / speaking / quiz) so they
-                // can immediately pick another lesson without re-choosing mode.
-                // Unmounting this section cleanly disconnects the LiveKit room.
+                // All words finished — same destination as Leave: drop the child
+                // back on the categories grid for the same path (vocabulary /
+                // speaking / quiz) so they can immediately pick another lesson
+                // theme. Unmounting this section cleanly disconnects the LiveKit
+                // room.
                 setScreen("lesson");
                 setTopicSlug(null);
               }}

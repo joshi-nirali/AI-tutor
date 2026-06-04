@@ -61,6 +61,54 @@ function useRemoteParticipantsFromRoom() {
  * Always publishes on connect (even when the name field is empty) so cartesiaVoiceId reaches the worker.
  * Retries once so the message arrives after the agent subscribes to data.
  */
+/**
+ * Renders a Leave button that asks the agent to tear down its session BEFORE the
+ * frontend disconnects from the LiveKit room. Without this, the framework only
+ * starts closing the AgentSession on participant_disconnected, which adds ~2 s
+ * for graceful drain plus variable BitHuman cleanup before the next lesson can
+ * pick up the agent.
+ *
+ * Flow on click:
+ *   1. publish ``{type:"lesson_leave"}`` on the kidtutor topic (reliable, fire and forget)
+ *   2. force-disconnect the LiveKit room from this side
+ *   3. invoke ``onLeave`` so App.js navigates to the categories screen
+ */
+function LeaveButton({ topicSlug, onLeave, className, ariaLabel, children }) {
+  const room = useMaybeRoomContext();
+  const encRef = useRef(typeof TextEncoder !== "undefined" ? new TextEncoder() : null);
+  const handleClick = useCallback(async () => {
+    const enc = encRef.current;
+    if (room && room.state === ConnectionState.Connected && enc) {
+      try {
+        const payload = enc.encode(
+          JSON.stringify({
+            type: "lesson_leave",
+            topicSlug,
+            reason: "child_clicked_leave",
+          })
+        );
+        await room.localParticipant.publishData(payload, {
+          reliable: true,
+          topic: KID_TUTOR_DATA_TOPIC,
+        });
+      } catch {
+        /* ignore — agent will close on participant_disconnected anyway */
+      }
+      try {
+        await room.disconnect();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof onLeave === "function") onLeave();
+  }, [room, topicSlug, onLeave]);
+  return (
+    <button type="button" className={className} onClick={handleClick} aria-label={ariaLabel}>
+      {children}
+    </button>
+  );
+}
+
 function PublishChildProfile({ topicSlug, childName, tutorSlug, cartesiaVoiceId }) {
   const room = useMaybeRoomContext();
   const encRef = useRef(typeof TextEncoder !== "undefined" ? new TextEncoder() : null);
@@ -83,7 +131,7 @@ function PublishChildProfile({ topicSlug, childName, tutorSlug, cartesiaVoiceId 
       );
       room.localParticipant
         .publishData(payload, { reliable: true, topic: KID_TUTOR_DATA_TOPIC })
-        .catch(() => {});
+        .catch(() => { });
     };
 
     publish();
@@ -118,7 +166,7 @@ function TutorAgentAudioRenderer() {
 
     const tryPlay = (el) => {
       if (!el) return;
-      void el.play().catch(() => {});
+      void el.play().catch(() => { });
     };
 
     const attachAgentAudio = (track, participant) => {
@@ -167,7 +215,7 @@ function TutorEnableMicOnConnect() {
   useEffect(() => {
     const enable = () => {
       if (room.state !== ConnectionState.Connected) return;
-      room.localParticipant.setMicrophoneEnabled(true).catch(() => {});
+      room.localParticipant.setMicrophoneEnabled(true).catch(() => { });
     };
     room.on(RoomEvent.Connected, enable);
     room.on(RoomEvent.ConnectionStateChanged, enable);
@@ -496,15 +544,19 @@ export default function TutorRoom({
         onDismiss={dismissSetupLoader}
       />
       <div
-        className={`tutor-livekit-inner tutor-livekit-inner--session${
-          showSetupLoader ? " tutor-livekit-inner--setup-pending" : ""
-        }`}
+        className={`tutor-livekit-inner tutor-livekit-inner--session${showSetupLoader ? " tutor-livekit-inner--setup-pending" : ""
+          }`}
         aria-hidden={showSetupLoader}
       >
         <header className="tutor-session-header">
-          <button type="button" className="tutor-session-back" onClick={onLeave} aria-label="Leave lesson">
+          <LeaveButton
+            topicSlug={topicSlug}
+            onLeave={onLeave}
+            className="tutor-session-back"
+            ariaLabel="Leave lesson"
+          >
             <span aria-hidden>‹</span>
-          </button>
+          </LeaveButton>
           <div className="tutor-session-header-title">
             <span className="tutor-session-header-star" aria-hidden>
               ★

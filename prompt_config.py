@@ -346,44 +346,42 @@ def build_kid_tutor_instructions(
         + "\n"
     )
 
-    # NOTE: {topic} is substituted via .format(); {{word}} is intentionally left as
-    # a literal {word} placeholder for the runtime caller — double-braces escape it.
+    # Tight voice-call rules — every line earns its tokens. Anything that
+    # repeats personality_block / mode_block / fixed_block has been removed
+    # so the prompt fits in <1500 tokens (was ~3400). This keeps GPT's TTFT
+    # under ~1.5s instead of 6-7s on every turn.
     voice_block = (
-        "## Voice session behavior\n"
-        "You tutor children about 3–7 years old on a live voice call.\n"
-        "Keep replies SHORT (one or two sentences) unless you are slowly modelling syllables.\n"
-        "Use simple words, a gentle tone, and enthusiasm. Never shame the child.\n"
-        f"Refer to yourself only as {tutor_name} (not any other name).\n"
-        "Always encourage effort (\"Good try!\", \"Nice listening!\"). Never say the word \"wrong\".\n"
-        "If an answer is incorrect, gently teach the right idea like: \"Good try! Banana is usually yellow.\"\n"
-        "If you give a pronunciation tip, break the word into syllable chunks like \"EL… E… PHANT\" — NEVER spell letter-by-letter (e.g. never say R-O-A-R or C-A-T).\n"
-        f"Lesson theme to lean on: {topic}.\n"
+        "## Voice rules (live call with a 3–7-year-old)\n"
+        "- Replies are 1–2 short sentences in simple words. Never shame; "
+        "never say \"wrong\".\n"
+        "- Always encourage effort (\"Good try!\", \"Nice listening!\"). "
+        f"Refer to yourself ONLY as {tutor_name}.\n"
+        f"- Lesson theme: {topic}.\n"
+        "- For pronunciation tips, break into syllable chunks like "
+        "\"EL-E-PHANT\" — NEVER letter-by-letter (no R-O-A-R or C-A-T).\n"
         "\n"
-        "## Session opening (very important)\n"
-        "The learning app may trigger your opening line when the child's microphone connects "
-        "(self-intro + a simple question such as how they feel or what they ate for breakfast). "
-        "Match that energy if you speak first in a turn.\n"
-        "Do NOT say a vocabulary word, do NOT start the lesson, and do NOT ask them to repeat a lesson word "
-        "until AFTER they have replied to that opener. When they answer (including short answers like \"good\", "
-        "\"fine\", or their name), acknowledge what they said in one short warm line, then move into the first "
-        "practice word as the session logic expects.\n"
-        "Do NOT ask \"Are you ready?\", \"Ready to learn?\", or any yes/no \"ready to start\" question — "
-        "those confuse the lesson handoff; keep the opener about feelings, breakfast, or their name only.\n"
+        "## Session opening\n"
+        "Wait for the child's first reply before starting the lesson. "
+        "Acknowledge what they said in one warm line, then move into the "
+        "first practice word. Never ask \"Are you ready?\".\n"
         "\n"
-        "## Tell chat apart from a pronunciation attempt\n"
-        "The child is only \"attempting\" the target word when YOU just asked them to say a specific word. "
-        "Otherwise treat their speech as ordinary conversation:\n"
-        "- Greetings (\"hi\", \"hello\"), small talk (\"good\", \"fine\", \"I'm five\", their name) → reply "
-        "conversationally; DO NOT pretend they tried the lesson word.\n"
-        "- Off-topic questions → answer in one short sentence, then gently steer back to the current word.\n"
-        "- Only judge pronunciation when the audio sounds like the target word you JUST asked for. "
-        "If unsure, ask kindly: \"Did you mean to say {word}?\" — never assume failure.\n"
-        "Never produce a sentence like \"let's slow down and speak banana\" unless the child actually "
-        "tried to pronounce that word.\n"
+        "## Pronunciation vs chat\n"
+        "Only judge pronunciation when YOU just asked for a specific word "
+        "AND the audio sounds like it. Greetings/small talk/off-topic → "
+        "reply conversationally in one short line, then steer back. If "
+        "unsure, ask: \"Did you mean to say {word}?\".\n"
     )
 
-    playbook = _build_scenario_playbook(prompts) if prompts else ""
-    examples = _build_response_style_examples(templates) if templates else ""
+    # NOTE: ``_build_scenario_playbook`` (~5 KB) and
+    # ``_build_response_style_examples`` (~1.5 KB) used to be appended here.
+    # They were dropped to cut LLM TTFT from ~7 s to <2 s — the templates
+    # were redundant with personality_block / mode_block / voice_block.
+    # Re-enable by setting KID_TUTOR_PROMPT_VERBOSE=1 (debug only).
+    verbose = (os.getenv("KID_TUTOR_PROMPT_VERBOSE", "0") or "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    playbook = _build_scenario_playbook(prompts) if (verbose and prompts) else ""
+    examples = _build_response_style_examples(templates) if (verbose and templates) else ""
     policy = _build_pronunciation_policy(pron_rules) if pron_rules else ""
     fixed_block = _fixed_word_list_block(fixed_words, mode)
     picture_sync_block = _lesson_picture_sync_block(prompts, fixed_words, mode)
