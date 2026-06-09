@@ -293,7 +293,7 @@ function TutorAvatarSetupGate({ tutorLabel, topicSlug, show, onDismiss }) {
           Getting {tutorLabel} ready…
         </p>
         <p className="tutor-avatar-setup-sub">
-          This clears when your tutor joins or when you say hi — allow the mic if asked.
+          This clears when your tutor joins...
         </p>
       </div>
     </div>
@@ -348,13 +348,12 @@ function TutorAvatarBlock({ tutorLabel }) {
                   ) : (
                     <div className="tutor-avatar-waiting" role="status">
                       {remotes.length === 0 ? (
-                        <>Waiting for {tutorLabel}… Start <code>python agent.py dev</code> with the same LiveKit project.</>
+                        <>Waiting for {tutorLabel}…</>
                       ) : agentOnly ? (
-                        <>
-                          The lesson helper is here, but Leo&apos;s <strong>video face</strong> (BitHuman) has not
-                          joined. Check <code>BITHUMAN_AGENT_ID</code>, <code>BITHUMAN_API_SECRET</code>, and errors in
-                          the terminal running <code>agent.py</code>.
-                        </>
+                        <div className="tutor-avatar-voice-only">
+                          <span className="tutor-avatar-voice-only-icon" aria-hidden>🎙️</span>
+                          <span className="tutor-avatar-voice-only-label">{tutorLabel} is listening!</span>
+                        </div>
                       ) : (
                         <>Waiting for {tutorLabel}…</>
                       )}
@@ -380,13 +379,13 @@ function TutorAvatarBlock({ tutorLabel }) {
           aria-label={isMicrophoneEnabled ? "Microphone on" : "Microphone off"}
         />
       </div>
-      <p className="tutor-avatar-video-tip">
+      {/* <p className="tutor-avatar-video-tip">
         Say hello to {tutorLabel}! If the mic has a slash, tap <strong>Microphone</strong> so they can hear you. Tap{" "}
         <strong>Turn on sound</strong> if you cannot hear them.
-      </p>
-      <div className="tutor-start-audio-wrap tutor-start-audio-wrap--avatar">
+      </p> */}
+      {/* <div className="tutor-start-audio-wrap tutor-start-audio-wrap--avatar">
         <StartAudio label="Tap to turn on sound 🔊" />
-      </div>
+      </div> */}
     </div>
   );
 }
@@ -500,13 +499,13 @@ export default function TutorRoom({
           When you are ready, tap the big button. Allow the microphone when asked so{" "}
           {tutorLabel} can hear you.
         </p>
-        <p className="tutor-room-hint">
+        {/* <p className="tutor-room-hint">
           Room: <code>{roomName}</code>
         </p>
         <p className="tutor-grownup-note" role="note">
           Grown-ups: this session uses the microphone and AI voice services — stay nearby and supervise young
           children online.
-        </p>
+        </p> */}
         {error && <p className="tutor-error">{error}</p>}
         <button type="button" className="kid-btn kid-btn-primary kid-btn-xl" onClick={handleStart}>
           Start with {tutorLabel} 🎤

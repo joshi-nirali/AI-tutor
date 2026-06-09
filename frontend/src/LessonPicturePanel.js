@@ -145,7 +145,7 @@ export default function LessonPicturePanel({
     );
     room.localParticipant
       .publishData(payload, { reliable: true, topic: KID_TUTOR_DATA_TOPIC })
-      .catch(() => {});
+      .catch(() => { });
   }, [room, n, index, topicSlug]);
 
   useEffect(() => {
@@ -357,7 +357,7 @@ export default function LessonPicturePanel({
 
   const quizFeedbackBlock =
     lessonMode === "quiz" &&
-    quizQuestionData?.childAnswer ? (
+      quizQuestionData?.childAnswer ? (
       <p className="lesson-visual-score lesson-visual-score--card lesson-visual-score--correct" role="status">
         You said: “{quizQuestionData.childAnswer}” — {modeUi.scoreCorrect}
       </p>
@@ -365,8 +365,8 @@ export default function LessonPicturePanel({
 
   const scoreBlock =
     pronunciationHint &&
-    pronunciationHint.wordIndex === index &&
-    typeof pronunciationHint.score === "number" ? (
+      pronunciationHint.wordIndex === index &&
+      typeof pronunciationHint.score === "number" ? (
       <p
         className={`lesson-visual-score lesson-visual-score--card lesson-visual-score--${pronunciationHint.band || "other"}`}
         role="status"
@@ -381,7 +381,7 @@ export default function LessonPicturePanel({
               : ""}
           </span>
         ) : null}
-        {pronunciationHint.avatarCue ? (
+        {/* {pronunciationHint.avatarCue ? (
           <span
             className="lesson-visual-avatar-cue"
             title={`Tutor cue: ${pronunciationHint.avatarCue.emotion || ""} · ${pronunciationHint.avatarCue.animation || ""}`}
@@ -392,7 +392,7 @@ export default function LessonPicturePanel({
               ? ` (${pronunciationHint.avatarCue.animation})`
               : null}
           </span>
-        ) : null}
+        ) : null} */}
       </p>
     ) : null;
 
@@ -447,11 +447,11 @@ export default function LessonPicturePanel({
 
   return (
     <div className={`tutor-session ${modeUi.panelClass}`}>
-      <p className="lesson-mode-banner" role="status">
+      {/* <p className="lesson-mode-banner" role="status">
         <span className="lesson-mode-badge lesson-mode-badge--large">{modeUi.badge}</span>
         <span className="lesson-mode-banner-title">{modeUi.title}</span>
         <span className="lesson-mode-banner-hint">{bannerHint}</span>
-      </p>
+      </p> */}
       {lessonMode === "vocabulary" && modeUi.steps ? (
         <ol
           className={`lesson-vocab-steps${awaitingCheck ? " lesson-vocab-steps--check" : ""}`}
@@ -624,7 +624,7 @@ export default function LessonPicturePanel({
       <div className="tutor-session-grid">
         <aside className="tutor-session-avatar-col" aria-label="Your tutor">
           {avatarSlot}
-          {showGreatJob ? (
+          {/* {showGreatJob ? (
             <div className="tutor-bubble tutor-bubble--feedback" role="status">
               <span className="tutor-bubble-sparkle" aria-hidden>
                 ✦
@@ -638,7 +638,7 @@ export default function LessonPicturePanel({
               </span>
               {listeningBubble}
             </div>
-          )}
+          )} */}
           <div
             className={`tutor-bubble tutor-bubble--prompt${!micListening ? " tutor-bubble--warn" : ""}`}
             role="region"
@@ -687,12 +687,12 @@ export default function LessonPicturePanel({
           ) : null}
           {quizFeedbackBlock}
           {scoreBlock}
-          <p className={`tutor-session-mic-hint ${lessonMode === "speaking" ? "tutor-session-mic-hint--speak" : ""}`}>
+          {/* <p className={`tutor-session-mic-hint ${lessonMode === "speaking" ? "tutor-session-mic-hint--speak" : ""}`}>
             <span className="tutor-session-mic-hint-icon" aria-hidden>
               {lessonMode === "speaking" ? "🎤" : "▶"}
             </span>
             {modeUi.micHint.replace("{tutor}", tutorLabel)}
-          </p>
+          </p> */}
         </section>
       </div>
       <nav className="tutor-session-dock" aria-label="Lesson controls">
@@ -716,7 +716,7 @@ export default function LessonPicturePanel({
           </span>
           <span className="tutor-session-dock-label">Listen</span>
         </button>
-        <button
+        {/* <button
           type="button"
           className={`tutor-session-dock-btn${dockActive === "picture" ? " is-active" : ""}`}
           onClick={onDockPicture}
@@ -725,7 +725,7 @@ export default function LessonPicturePanel({
             🖼
           </span>
           <span className="tutor-session-dock-label">Picture</span>
-        </button>
+        </button> */}
         <button
           type="button"
           className={`tutor-session-dock-btn${dockActive === "next" ? " is-active" : ""}`}

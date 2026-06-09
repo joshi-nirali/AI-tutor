@@ -391,7 +391,7 @@ export default function App() {
           </section>
         )}
 
-        <p id="kid-parent-note" className="kid-parent-note" role="note">
+        {/* <p id="kid-parent-note" className="kid-parent-note" role="note">
           <span className="kid-parent-lock" aria-hidden>
             🔒
           </span>
@@ -404,7 +404,7 @@ export default function App() {
             Dev: run <code>python token_server.py</code> and <code>python agent.py dev</code>. Voice-only:{" "}
             <code>KID_TUTOR_USE_AVATAR=0</code> in <code>.env</code>.
           </p>
-        )}
+        )} */}
       </div>
     </div>
   );

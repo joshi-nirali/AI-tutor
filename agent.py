@@ -2639,8 +2639,8 @@ async def entrypoint(ctx: JobContext):
                 f'Then start TEACHING MODE on the first word "{expected}". '
                 f'Announce the word with excitement, give a simple meaning a 5-year-old can '
                 f'picture, point at the picture on screen, and one short example sentence using '
-                f'"{expected}". Then ask them to say "{expected}". You will ask ONE comprehension '
-                "question about the word after they repeat it. 2–3 short sentences."
+                f'"{expected}". Then ask them to say "{expected}". '
+                "Do NOT ask any comprehension or quiz questions. 2–3 short sentences."
             )
         try:
             instructions = (
@@ -2768,101 +2768,7 @@ async def entrypoint(ctx: JobContext):
             last_stt_dedupe_key = norm_key
             last_stt_dedupe_at = _now
 
-        # Vocabulary: pronunciation passed — next child reply is a comprehension answer (not scored as chat).
-        if mode == "vocabulary" and lesson.vocab_awaiting_comprehension:
-            exp_now = lesson.expected_word()
-
-            async def _suppress_dup_reply_and_nudge(reason: str) -> None:
-                """Cancel the framework's auto-reply and emit a SHORT comprehension nudge.
-
-                Without this, repeating the just-said lesson word (or a filler) lets the
-                LLM auto-reply re-introduce the word — producing the "tutor repeats the
-                same word twice" effect the user sees in the log around fish→fish.
-                """
-                if not scoring_reply_enabled:
-                    return
-                try:
-                    await asyncio.wait_for(
-                        session.interrupt(force=False),
-                        timeout=_scoring_interrupt_wait_cap_s(),
-                    )
-                except (asyncio.TimeoutError, Exception) as e:
-                    logger.debug("comprehension dup interrupt: %s", e)
-                await asyncio.sleep(0.05)
-                try:
-                    instructions = (
-                        f'The child just {reason} during the comprehension question for '
-                        f'"{exp_now or "the current word"}". Do NOT reintroduce or re-explain '
-                        f'"{exp_now or "the word"}". In ONE short, warm sentence, gently re-ask '
-                        "your last comprehension question (yes/no, A/B, where does it live?) "
-                        "and wait. Maximum 1 sentence."
-                    )
-                    _generate_reply_optimized(user_input=text, instructions=instructions)
-                except Exception as e:
-                    logger.warning("generate_reply after comprehension dup: %s", e)
-
-            if pending_advance_trigger_norm and norm_key == pending_advance_trigger_norm:
-                logger.info(
-                    "STT skipped (child re-said the just-correct word during comprehension wait): %r",
-                    text,
-                )
-                await _suppress_dup_reply_and_nudge("re-said the lesson word")
-                return
-            if pronunciation_score.should_skip_scoring(text):
-                logger.info(
-                    "STT skipped (filler/skip-list during comprehension wait): %r",
-                    text,
-                )
-                await _suppress_dup_reply_and_nudge("gave a short filler reply")
-                return
-            if exp_now and pronunciation_score.looks_like_readiness_acknowledgment(
-                text, exp_now
-            ):
-                logger.info(
-                    "STT skipped (readiness/meta reply during comprehension wait): %r",
-                    text,
-                )
-                await _suppress_dup_reply_and_nudge("gave a readiness/meta reply")
-                return
-            pidx = lesson.pending_advance_to_index
-            next_w: str | None = None
-            if pidx is not None and lesson.words and 0 <= pidx < len(lesson.words):
-                next_w = lesson.words[pidx]
-            lesson.vocab_awaiting_comprehension = False
-            if pidx is not None:
-                logger.info(
-                    "vocabulary comprehension answered — pending transition to index %s (%s)",
-                    pidx,
-                    next_w,
-                )
-            if scoring_reply_enabled:
-                try:
-                    await asyncio.wait_for(
-                        session.interrupt(force=False),
-                        timeout=_scoring_interrupt_wait_cap_s(),
-                    )
-                except (asyncio.TimeoutError, Exception) as e:
-                    logger.debug("vocabulary check interrupt: %s", e)
-                await asyncio.sleep(0.05)
-                try:
-                    if next_w:
-                        instructions = (
-                            f'They answered your quick question about "{exp_now or "the word"}" '
-                            f'(child said: "{text}"). Celebrate briefly, then teach the next word '
-                            f'"{next_w}": say the word, tiny meaning, one example, ask them to say it. '
-                            "Speak the next word as a whole word so the picture stays in sync. "
-                            "2–3 short sentences. Do not mention tools or code."
-                        )
-                        _generate_reply_optimized(user_input=text, instructions=instructions)
-                    elif exp_now:
-                        instructions = (
-                            f'They answered about "{exp_now}". One warm sentence of praise — '
-                            "all lesson words are done."
-                        )
-                        _generate_reply_optimized(user_input=text, instructions=instructions)
-                except Exception as e:
-                    logger.warning("generate_reply after vocabulary check: %s", e)
-            return
+        # (Comprehension question step removed — vocabulary mode is teach-only.)
 
         # Waiting for any real utterance before syncing the picture to the next word after
         # a correct score (speaking defer / KID_TUTOR_DEFER_PICTURE_UNTIL_RESPONSE).
@@ -2895,25 +2801,28 @@ async def entrypoint(ctx: JobContext):
                     )
                     await refresh_agent_instructions()
 
-                if pronunciation_score.should_skip_scoring(text):
-                    return
-                if pronunciation_score.looks_like_readiness_acknowledgment(text, next_w):
-                    logger.debug(
-                        "readiness reply during deferred handoff — not advancing: %r",
-                        text,
-                    )
-                    return
-                if pronunciation_score.looks_like_chat(text):
-                    logger.debug(
-                        "chat during deferred handoff — not advancing: %r",
-                        text,
-                    )
-                    return
-                await _apply_deferred_picture_advance("deferred_advance_attempt")
-                logger.info(
-                    "deferred picture advance applied (attempt) → index %s; scoring same utterance",
-                    lesson.word_index,
+                is_chat_or_filler = (
+                    pronunciation_score.should_skip_scoring(text)
+                    or pronunciation_score.looks_like_readiness_acknowledgment(text, next_w)
+                    or pronunciation_score.looks_like_chat(text)
                 )
+                if is_chat_or_filler:
+                    if mode == "vocabulary":
+                        # Vocabulary: let the normal chat/scoring path reply so the agent
+                        # doesn't go silent while waiting for TTS to say the next word.
+                        # Do NOT consume the pending advance here — fall through below.
+                        logger.debug(
+                            "vocabulary: chat/filler during pending advance (%r) — routing to chat handler",
+                            text,
+                        )
+                    else:
+                        return
+                else:
+                    await _apply_deferred_picture_advance("deferred_advance_attempt")
+                    logger.info(
+                        "deferred picture advance applied (attempt) → index %s; scoring same utterance",
+                        lesson.word_index,
+                    )
             else:
                 lesson.pending_advance_to_index = None
                 pending_advance_trigger_norm = None
@@ -3002,6 +2911,7 @@ async def entrypoint(ctx: JobContext):
         advanced = False
         deferred_next_intro = False
         vocab_check_queued = False
+        vocabulary_pending_advance = False
         next_word: str | None = None
         is_last_word = False
         picture_index = scored_at_index
@@ -3017,17 +2927,15 @@ async def entrypoint(ctx: JobContext):
                 next_idx = scored_at_index + 1
                 next_word = lesson.words[next_idx]
                 if mode == "vocabulary":
-                    if not lesson.vocab_awaiting_comprehension:
-                        lesson.vocab_awaiting_comprehension = True
-                        lesson.pending_advance_to_index = next_idx
-                        pending_advance_trigger_norm = norm_key or None
-                        vocab_check_queued = True
-                        logger.info(
-                            "vocabulary: %r ok — comprehension check before %r (picture stays on %r)",
-                            expected,
-                            next_word,
-                            expected,
-                        )
+                    # No comprehension check — advance picture directly via TTS sync.
+                    lesson.pending_advance_to_index = next_idx
+                    pending_advance_trigger_norm = norm_key or None
+                    vocabulary_pending_advance = True
+                    logger.info(
+                        "vocabulary: %r ok — pending advance to %r",
+                        expected,
+                        next_word,
+                    )
                 elif defer_picture_until_response:
                     if lesson.pending_advance_to_index is None:
                         lesson.pending_advance_to_index = next_idx
@@ -3053,13 +2961,6 @@ async def entrypoint(ctx: JobContext):
             elif scored_at_index >= last_idx:
                 is_last_word = True
                 picture_index = scored_at_index
-                if mode == "vocabulary" and not lesson.vocab_awaiting_comprehension:
-                    lesson.vocab_awaiting_comprehension = True
-                    vocab_check_queued = True
-                    logger.info(
-                        "vocabulary: last word %r ok — final comprehension check before wrap-up",
-                        expected,
-                    )
             else:
                 logger.debug(
                     "correct at index %s but lesson.word_index=%s — skip extra picture advance",
@@ -3114,7 +3015,7 @@ async def entrypoint(ctx: JobContext):
             and (
                 advanced
                 or deferred_next_intro
-                or vocab_check_queued
+                or vocabulary_pending_advance
                 or is_last_word
                 or meta["maxed_out"]
             )
@@ -3138,14 +3039,7 @@ async def entrypoint(ctx: JobContext):
                         f" Voice energy hint for this turn: {cue.get('emotion', '')} tone, "
                         f"{cue.get('animation', '')} body language (express in voice; UI may show cues)."
                     )
-                if vocab_check_queued:
-                    transition = (
-                        f' They pronounced "{expected}" well ({result["band"]}). '
-                        f'Ask ONE quick comprehension question about "{expected}" only — '
-                        "yes/no or simple A/B (e.g. big or small?). "
-                        f'Do NOT say "{next_word}" yet and do NOT move on. 1–2 sentences.'
-                    )
-                elif deferred_next_intro and next_word:
+                if deferred_next_intro and next_word:
                     transition = (
                         f" They pronounced \"{expected}\" correctly. The next word is \"{next_word}\". "
                         f"Celebrate briefly, then invite them to try \"{next_word}\" — say that word once "
@@ -3154,6 +3048,14 @@ async def entrypoint(ctx: JobContext):
                         f'encouraging way for "{next_word}". '
                         "The app syncs the picture when you speak the next word — only use natural "
                         "child-friendly sentences; never say tool names, function names, or code."
+                    )
+                elif mode == "vocabulary" and next_word:
+                    # Vocabulary: picture advances via TTS sync when tutor says next word aloud.
+                    transition = (
+                        f' Well done on \"{expected}\"! Celebrate in ONE short sentence, then say '
+                        f'\"{next_word}\" aloud (whole word, never letter-by-letter) to bring up the next '
+                        f'picture — then teach \"{next_word}\": meaning, one example, ask them to repeat. '
+                        "Do NOT ask any comprehension or quiz questions. 2–3 short sentences total."
                     )
                 elif advanced and next_word:
                     if mode == "speaking":
@@ -3165,9 +3067,8 @@ async def entrypoint(ctx: JobContext):
                         )
                     else:
                         transition = (
-                            f' Teaching mode. They did well on "{expected}". If you have not already '
-                            f'asked the comprehension question for "{expected}", ask ONE now and wait. '
-                            f'Otherwise begin teaching "{next_word}": announce the word, give a simple '
+                            f' Teaching mode. They did well on "{expected}". '
+                            f'Begin teaching "{next_word}": announce the word, give a simple '
                             "meaning, point at the picture, and one short example sentence (2–3 short "
                             "sentences). Ask them to repeat after that. Picture updates when you speak "
                             "the next word."

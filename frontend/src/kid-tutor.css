@@ -1186,6 +1186,34 @@
   color: #37474f;
 }
 
+/* Voice-only mode: agent joined but no BitHuman video */
+.tutor-avatar-voice-only {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 12rem;
+}
+
+.tutor-avatar-voice-only-icon {
+  font-size: 3.5rem;
+  line-height: 1;
+  animation: voice-only-pulse 1.8s ease-in-out infinite;
+}
+
+.tutor-avatar-voice-only-label {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--kid-sky-dark, #1aa8e6);
+}
+
+@keyframes voice-only-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.8; }
+}
+
 .tutor-avatar-video-tip strong {
   font-weight: 700;
   color: #1565c0;

@@ -5,7 +5,7 @@ export const LESSON_MODE_UI = {
     panelClass: "lesson-mode--vocabulary",
     title: "Learn vocabulary · Teaching mode",
     cardHint:
-      "Discover what each word means — your AI teacher introduces the word, gives a fun fact, then asks one quick question to check you got it.",
+      "Discover what each word means 2014 your AI teacher introduces the word, explains its meaning, then asks you to repeat it.",
     prompt: (word) => `Listen to your teacher about “${word}”`,
     promptQuickCheck: (word) => `Answer the question about “${word}”`,
     micHint: "Listen to {tutor}, repeat the word, then answer the question.",
@@ -16,7 +16,7 @@ export const LESSON_MODE_UI = {
     bubbleListening: "{tutor} is teaching you a new word…",
     bubbleQuickCheck: "Answer your teacher's question…",
     bubbleGreat: "Great learning!",
-    steps: ["Word", "Meaning", "Fun fact", "Say it", "Quick question"],
+    steps: ["Word", "Meaning", "Example", "Say it"],
   },
   speaking: {
     badge: "Sentence coach",

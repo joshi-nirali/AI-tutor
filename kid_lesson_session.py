@@ -242,20 +242,12 @@ class KidLessonSession:
                 "- Active role: AI TEACHER (Teaching Mode). Tone: warm, curious, explains in simple "
                 "English for ages 5–8."
             )
-            if self.vocab_awaiting_comprehension:
-                exp = self.expected_word()
-                lines.append(
-                    "- Teaching step NOW: comprehension question. The child pronounced "
-                    f'"{exp or "this word"}" well — ask ONE simple question about its meaning '
-                    "(yes/no, A/B, or \"where does it live?\"-style). Wait for their answer. "
-                    "Do NOT announce the next word yet."
-                )
-            else:
-                lines.append(
-                    "- Teaching flow per word: (1) announce word, (2) simple meaning, "
-                    "(3) point at the picture, (4) one example sentence, (5) ask them to repeat, "
-                    "(6) ONE comprehension question. Never skip to the next word after pronunciation alone."
-                )
+            lines.append(
+                "- Teaching flow per word: (1) announce word, (2) simple meaning, "
+                "(3) point at the picture on screen, (4) one short example sentence, "
+                "(5) ask them to repeat the word. Move to the next word once they say it. "
+                "Do NOT ask any comprehension or quiz questions."
+            )
         elif self.session_mode == "speaking":
             cur_sentence = self.current_speaking_sentence()
             target_word = exp or "this word"

@@ -103,8 +103,9 @@ export default function TutorLiveStatus({ tutorLabel }) {
 
   return (
     <div className="tutor-status tutor-status-ok" role="status">
-      {tutorLabel} is here — say hello! If you can&apos;t hear them, tap{" "}
-      <strong>Turn on sound</strong> below.
+      {tutorLabel} is here
+      {/* — say hello! If you can&apos;t hear them, tap{" "}
+      <strong>Turn on sound</strong> below. */}
     </div>
   );
 }
