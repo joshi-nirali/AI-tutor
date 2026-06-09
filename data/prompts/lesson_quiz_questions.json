@@ -1,0 +1,1049 @@
+{
+  "_meta": {
+    "version": "1.1",
+    "description": "Per-category, per-word quiz questions for QUIZ mode. Two questions per word, each a different type. Age target: 5–8. Varied types (colour, sound, size, where, action, fact, number, yes_no, either_or) so children stay engaged. The agent asks the EXACT question from live state; any child answer is accepted — the host reacts warmly, never says 'wrong'.",
+    "questions_per_word": 2,
+    "question_types": ["colour", "sound", "size", "where", "action", "fact", "number", "yes_no", "either_or"],
+    "max_questions_per_picture": 2
+  },
+  "animals": {
+    "cat": [
+      {
+        "question": "What sound does a cat make — meow or woof?",
+        "type": "sound",
+        "answer": "meow"
+      },
+      {
+        "question": "How many legs does a cat have — two or four?",
+        "type": "number",
+        "answer": "four"
+      }
+    ],
+    "dog": [
+      {
+        "question": "What sound does a dog make — woof or moo?",
+        "type": "sound",
+        "answer": "woof"
+      },
+      {
+        "question": "Do dogs wag their tails when they are happy — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "bird": [
+      {
+        "question": "Can a bird fly — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "What do birds have instead of arms — wings or wheels?",
+        "type": "either_or",
+        "answer": "wings"
+      }
+    ],
+    "fish": [
+      {
+        "question": "Where do fish live — in water or on land?",
+        "type": "where",
+        "answer": "in water"
+      },
+      {
+        "question": "Do fish use fins to swim — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "elephant": [
+      {
+        "question": "What colour is an elephant — pink or grey?",
+        "type": "colour",
+        "answer": "grey"
+      },
+      {
+        "question": "What does an elephant use its long trunk for — drinking water or flying?",
+        "type": "either_or",
+        "answer": "drinking water"
+      }
+    ],
+    "lion": [
+      {
+        "question": "What sound does a lion make — roar or chirp?",
+        "type": "sound",
+        "answer": "roar"
+      },
+      {
+        "question": "Does a male lion have a fluffy mane around its head — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "rabbit": [
+      {
+        "question": "How does a rabbit move — hop or swim?",
+        "type": "action",
+        "answer": "hop"
+      },
+      {
+        "question": "What do rabbits love to eat — carrots or pizza?",
+        "type": "either_or",
+        "answer": "carrots"
+      }
+    ],
+    "frog": [
+      {
+        "question": "What sound does a frog make — ribbit or moo?",
+        "type": "sound",
+        "answer": "ribbit"
+      },
+      {
+        "question": "Where do frogs live — near water or in the desert?",
+        "type": "where",
+        "answer": "near water"
+      }
+    ],
+    "butterfly": [
+      {
+        "question": "Do butterflies have colourful wings — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does a butterfly start life as a caterpillar — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "horse": [
+      {
+        "question": "What sound does a horse make — neigh or meow?",
+        "type": "sound",
+        "answer": "neigh"
+      },
+      {
+        "question": "Can people ride on a horse — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  },
+  "colors": {
+    "red": [
+      {
+        "question": "Is an apple usually red or blue?",
+        "type": "colour",
+        "answer": "red"
+      },
+      {
+        "question": "Does red mean STOP at a traffic light — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "blue": [
+      {
+        "question": "Is the sky blue or yellow?",
+        "type": "colour",
+        "answer": "blue"
+      },
+      {
+        "question": "Are blueberries blue or orange?",
+        "type": "colour",
+        "answer": "blue"
+      }
+    ],
+    "yellow": [
+      {
+        "question": "Is the sun yellow or purple?",
+        "type": "colour",
+        "answer": "yellow"
+      },
+      {
+        "question": "Is a banana yellow or black when it is ripe?",
+        "type": "colour",
+        "answer": "yellow"
+      }
+    ],
+    "green": [
+      {
+        "question": "Is grass green or orange?",
+        "type": "colour",
+        "answer": "green"
+      },
+      {
+        "question": "Are leaves on trees mostly green — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "orange": [
+      {
+        "question": "Is a pumpkin orange or blue?",
+        "type": "colour",
+        "answer": "orange"
+      },
+      {
+        "question": "Is a carrot orange or yellow?",
+        "type": "colour",
+        "answer": "orange"
+      }
+    ],
+    "purple": [
+      {
+        "question": "Are grapes often purple or yellow?",
+        "type": "colour",
+        "answer": "purple"
+      },
+      {
+        "question": "Is an eggplant purple or green?",
+        "type": "colour",
+        "answer": "purple"
+      }
+    ],
+    "pink": [
+      {
+        "question": "Is a flamingo pink or brown?",
+        "type": "colour",
+        "answer": "pink"
+      },
+      {
+        "question": "Are rose flowers often pink or blue?",
+        "type": "colour",
+        "answer": "pink"
+      }
+    ],
+    "black": [
+      {
+        "question": "Is the night sky black or white?",
+        "type": "colour",
+        "answer": "black"
+      },
+      {
+        "question": "Is a crow black or yellow?",
+        "type": "colour",
+        "answer": "black"
+      }
+    ],
+    "white": [
+      {
+        "question": "Is snow white or green?",
+        "type": "colour",
+        "answer": "white"
+      },
+      {
+        "question": "Are clouds usually white or red?",
+        "type": "colour",
+        "answer": "white"
+      }
+    ],
+    "brown": [
+      {
+        "question": "Is a bear often brown or blue?",
+        "type": "colour",
+        "answer": "brown"
+      },
+      {
+        "question": "Is chocolate brown or pink?",
+        "type": "colour",
+        "answer": "brown"
+      }
+    ]
+  },
+  "shapes": {
+    "circle": [
+      {
+        "question": "Is a wheel shaped like a circle or a square?",
+        "type": "either_or",
+        "answer": "circle"
+      },
+      {
+        "question": "Does a circle have any corners — yes or no?",
+        "type": "yes_no",
+        "answer": "no"
+      }
+    ],
+    "square": [
+      {
+        "question": "How many sides does a square have — three or four?",
+        "type": "number",
+        "answer": "four"
+      },
+      {
+        "question": "Is a dice often shaped like a square box — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "triangle": [
+      {
+        "question": "How many sides does a triangle have — three or five?",
+        "type": "number",
+        "answer": "three"
+      },
+      {
+        "question": "Is a pizza slice shaped like a triangle or a circle?",
+        "type": "either_or",
+        "answer": "triangle"
+      }
+    ],
+    "star": [
+      {
+        "question": "Is a star shape pointy or round like a ball?",
+        "type": "either_or",
+        "answer": "pointy"
+      },
+      {
+        "question": "Do we see stars in the sky at night — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "heart": [
+      {
+        "question": "Is a heart shape used to show love — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Is a heart shape pointy at the bottom or flat like a square?",
+        "type": "either_or",
+        "answer": "pointy"
+      }
+    ],
+    "rectangle": [
+      {
+        "question": "Is a door shaped like a rectangle or a circle?",
+        "type": "either_or",
+        "answer": "rectangle"
+      },
+      {
+        "question": "Does a rectangle have four sides — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "oval": [
+      {
+        "question": "Is an egg shaped like an oval or a square?",
+        "type": "either_or",
+        "answer": "oval"
+      },
+      {
+        "question": "Is an oval round but longer than a circle — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "diamond": [
+      {
+        "question": "Is a kite often shaped like a diamond or a circle?",
+        "type": "either_or",
+        "answer": "diamond"
+      },
+      {
+        "question": "Does a diamond shape have four corners — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  },
+  "fairytales": {
+    "castle": [
+      {
+        "question": "Is a castle big or tiny like a toy?",
+        "type": "size",
+        "answer": "big"
+      },
+      {
+        "question": "Who lives in a castle — a king or a fish?",
+        "type": "either_or",
+        "answer": "a king"
+      }
+    ],
+    "princess": [
+      {
+        "question": "Does a princess often wear a beautiful dress — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does a princess live in a castle in fairy tales — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "prince": [
+      {
+        "question": "Is a prince brave and kind in fairy tales — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does a prince live in a palace or under the sea?",
+        "type": "where",
+        "answer": "in a palace"
+      }
+    ],
+    "dragon": [
+      {
+        "question": "Can a dragon breathe fire — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Is a dragon big or as small as a mouse?",
+        "type": "size",
+        "answer": "big"
+      }
+    ],
+    "fairy": [
+      {
+        "question": "Can a fairy fly — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Is a fairy tiny or giant like a giant?",
+        "type": "size",
+        "answer": "tiny"
+      }
+    ],
+    "magic": [
+      {
+        "question": "Can fairies and wizards do magic in stories — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Who uses a magic wand — a fairy or a bus driver?",
+        "type": "either_or",
+        "answer": "a fairy"
+      }
+    ],
+    "king": [
+      {
+        "question": "Does a king wear a crown — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Where does a king live — in a castle or in the ocean?",
+        "type": "where",
+        "answer": "in a castle"
+      }
+    ],
+    "queen": [
+      {
+        "question": "Does a queen rule a kingdom — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does a queen wear a sparkling crown — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "wand": [
+      {
+        "question": "Does a fairy wave a magic wand — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Is a magic wand long and thin or round like a ball?",
+        "type": "either_or",
+        "answer": "long and thin"
+      }
+    ],
+    "crown": [
+      {
+        "question": "Is a crown made of gold or mud?",
+        "type": "either_or",
+        "answer": "gold"
+      },
+      {
+        "question": "Is a crown shiny and sparkly — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  },
+  "foods": {
+    "banana": [
+      {
+        "question": "What colour is a ripe banana — yellow or blue?",
+        "type": "colour",
+        "answer": "yellow"
+      },
+      {
+        "question": "Do monkeys love to eat bananas — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "apple": [
+      {
+        "question": "Is an apple a fruit or a vegetable?",
+        "type": "either_or",
+        "answer": "fruit"
+      },
+      {
+        "question": "Is an apple crunchy when you bite it — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "grape": [
+      {
+        "question": "Are grapes small or giant like a watermelon?",
+        "type": "size",
+        "answer": "small"
+      },
+      {
+        "question": "Do grapes grow in bunches on a vine — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "bread": [
+      {
+        "question": "Is bread soft or made of rocks?",
+        "type": "either_or",
+        "answer": "soft"
+      },
+      {
+        "question": "Is bread baked in an oven — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "milk": [
+      {
+        "question": "Is milk a drink or a toy?",
+        "type": "either_or",
+        "answer": "a drink"
+      },
+      {
+        "question": "Does milk come from cows — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "cheese": [
+      {
+        "question": "Is cheese made from milk — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Is cheese soft and stretchy on pizza — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  },
+  "numbers": {
+    "one": [
+      {
+        "question": "How many suns do we have in the sky — one or ten?",
+        "type": "number",
+        "answer": "one"
+      },
+      {
+        "question": "If you have one cookie and eat it, do you have zero left — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "two": [
+      {
+        "question": "How many eyes do you have — one or two?",
+        "type": "number",
+        "answer": "two"
+      },
+      {
+        "question": "Do you have two hands — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "three": [
+      {
+        "question": "How many sides does a triangle have — two or three?",
+        "type": "number",
+        "answer": "three"
+      },
+      {
+        "question": "Are there three colours in a traffic light — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "four": [
+      {
+        "question": "How many legs does a dog have — two or four?",
+        "type": "number",
+        "answer": "four"
+      },
+      {
+        "question": "How many sides does a square have — three or four?",
+        "type": "number",
+        "answer": "four"
+      }
+    ],
+    "five": [
+      {
+        "question": "How many fingers are on one hand — four or five?",
+        "type": "number",
+        "answer": "five"
+      },
+      {
+        "question": "How many toes are on one foot — four or five?",
+        "type": "number",
+        "answer": "five"
+      }
+    ],
+    "six": [
+      {
+        "question": "How many legs does a bee have — four or six?",
+        "type": "number",
+        "answer": "six"
+      },
+      {
+        "question": "How many sides does a hexagon have — five or six?",
+        "type": "number",
+        "answer": "six"
+      }
+    ],
+    "seven": [
+      {
+        "question": "How many days are in a week — five or seven?",
+        "type": "number",
+        "answer": "seven"
+      },
+      {
+        "question": "Are there seven colours in a rainbow — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "eight": [
+      {
+        "question": "How many legs does a spider have — six or eight?",
+        "type": "number",
+        "answer": "eight"
+      },
+      {
+        "question": "Do octopuses have eight arms — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "nine": [
+      {
+        "question": "In stories, how many lives does a cat have — nine or two?",
+        "type": "fact",
+        "answer": "nine"
+      },
+      {
+        "question": "Is nine the number that comes just before ten — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "ten": [
+      {
+        "question": "How many fingers do you have on both hands — eight or ten?",
+        "type": "number",
+        "answer": "ten"
+      },
+      {
+        "question": "Can you count to ten on your fingers — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  },
+  "body_parts": {
+    "hand": [
+      {
+        "question": "How many hands do you have — one or two?",
+        "type": "number",
+        "answer": "two"
+      },
+      {
+        "question": "Do you clap with your hands — yes or no?",
+        "type": "action",
+        "answer": "yes"
+      }
+    ],
+    "nose": [
+      {
+        "question": "Do you smell things with your nose — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does your nose help you breathe — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "eyes": [
+      {
+        "question": "How many eyes do you have — one or two?",
+        "type": "number",
+        "answer": "two"
+      },
+      {
+        "question": "Do you blink your eyes to keep them clean — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "ears": [
+      {
+        "question": "How many ears do you have — one or two?",
+        "type": "number",
+        "answer": "two"
+      },
+      {
+        "question": "Do you hear music with your ears — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "head": [
+      {
+        "question": "Is your head on top of your body — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Is your brain inside your head — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "feet": [
+      {
+        "question": "How many feet do you have — one or two?",
+        "type": "number",
+        "answer": "two"
+      },
+      {
+        "question": "Do you wear shoes on your feet — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "fingers": [
+      {
+        "question": "How many fingers are on one hand — four or five?",
+        "type": "number",
+        "answer": "five"
+      },
+      {
+        "question": "Can you draw and write with your fingers — yes or no?",
+        "type": "action",
+        "answer": "yes"
+      }
+    ]
+  },
+  "weather": {
+    "sun": [
+      {
+        "question": "Is the sun hot or cold?",
+        "type": "either_or",
+        "answer": "hot"
+      },
+      {
+        "question": "Does the sun give us light during the day — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "rain": [
+      {
+        "question": "Does rain fall down from clouds — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Is rain wet or dry?",
+        "type": "either_or",
+        "answer": "wet"
+      }
+    ],
+    "cloud": [
+      {
+        "question": "Are clouds up in the sky — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Are clouds fluffy or hard like rocks?",
+        "type": "either_or",
+        "answer": "fluffy"
+      }
+    ],
+    "snow": [
+      {
+        "question": "Is snow cold or hot?",
+        "type": "either_or",
+        "answer": "cold"
+      },
+      {
+        "question": "Can you build a snowman with snow — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "wind": [
+      {
+        "question": "Can you feel the wind on your face — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Can wind fly a kite up in the air — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "rainbow": [
+      {
+        "question": "Does a rainbow have many beautiful colours — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Where do you see a rainbow — in the sky or under your bed?",
+        "type": "where",
+        "answer": "in the sky"
+      }
+    ],
+    "storm": [
+      {
+        "question": "Is a storm loud or quiet?",
+        "type": "either_or",
+        "answer": "loud"
+      },
+      {
+        "question": "Can you see lightning in a storm — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "summer": [
+      {
+        "question": "Is summer hot or freezing cold?",
+        "type": "either_or",
+        "answer": "hot"
+      },
+      {
+        "question": "Do you go swimming in summer — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  },
+  "vehicles": {
+    "car": [
+      {
+        "question": "Does a car have wheels — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does a car drive on roads or fly in the sky?",
+        "type": "either_or",
+        "answer": "on roads"
+      }
+    ],
+    "bus": [
+      {
+        "question": "Is a school bus often yellow or pink?",
+        "type": "colour",
+        "answer": "yellow"
+      },
+      {
+        "question": "Can many children ride a bus together — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "train": [
+      {
+        "question": "What sound does a train make — choo choo or meow?",
+        "type": "sound",
+        "answer": "choo choo"
+      },
+      {
+        "question": "Does a train run on tracks — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "airplane": [
+      {
+        "question": "Can an airplane fly high in the sky — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does an airplane have wings — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "bicycle": [
+      {
+        "question": "How many wheels does a bicycle have — one or two?",
+        "type": "number",
+        "answer": "two"
+      },
+      {
+        "question": "Do you pedal a bicycle with your feet — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "boat": [
+      {
+        "question": "Does a boat float on water — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does a boat travel on water or in the sky?",
+        "type": "either_or",
+        "answer": "on water"
+      }
+    ],
+    "truck": [
+      {
+        "question": "Is a truck big or small like a bicycle?",
+        "type": "size",
+        "answer": "big"
+      },
+      {
+        "question": "Does a truck carry heavy things — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "helicopter": [
+      {
+        "question": "Can a helicopter fly — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      },
+      {
+        "question": "Does a helicopter have spinning blades on top — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  },
+  "fruits": {
+    "mango": [
+      {
+        "question": "Is a mango a fruit or a vegetable?",
+        "type": "either_or",
+        "answer": "fruit"
+      },
+      {
+        "question": "Is a mango sweet and juicy — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "strawberry": [
+      {
+        "question": "What colour is a strawberry — red or blue?",
+        "type": "colour",
+        "answer": "red"
+      },
+      {
+        "question": "Does a strawberry have tiny seeds on the outside — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "watermelon": [
+      {
+        "question": "Is a watermelon big or tiny like a grape?",
+        "type": "size",
+        "answer": "big"
+      },
+      {
+        "question": "Is a watermelon red and juicy inside — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "pineapple": [
+      {
+        "question": "What colour is a pineapple inside — yellow or blue?",
+        "type": "colour",
+        "answer": "yellow"
+      },
+      {
+        "question": "Is a pineapple prickly on the outside — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "cherry": [
+      {
+        "question": "Are cherries small or huge like a pumpkin?",
+        "type": "size",
+        "answer": "small"
+      },
+      {
+        "question": "Are cherries often red — yes or no?",
+        "type": "colour",
+        "answer": "yes"
+      }
+    ],
+    "peach": [
+      {
+        "question": "Is a peach fuzzy or spiky like a cactus?",
+        "type": "either_or",
+        "answer": "fuzzy"
+      },
+      {
+        "question": "Is a peach sweet to eat — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ],
+    "kiwi": [
+      {
+        "question": "Is kiwi green inside — yes or no?",
+        "type": "colour",
+        "answer": "yes"
+      },
+      {
+        "question": "Is the outside of a kiwi rough and hairy — yes or no?",
+        "type": "fact",
+        "answer": "yes"
+      }
+    ],
+    "coconut": [
+      {
+        "question": "What colour is a coconut on the outside — brown or pink?",
+        "type": "colour",
+        "answer": "brown"
+      },
+      {
+        "question": "Do coconuts grow on tall palm trees — yes or no?",
+        "type": "yes_no",
+        "answer": "yes"
+      }
+    ]
+  }
+}

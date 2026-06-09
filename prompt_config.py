@@ -81,6 +81,103 @@ def load_pronunciation_rules() -> dict[str, Any]:
     return _load_json("pronunciation_rules.json")
 
 
+def load_lesson_sentences() -> dict[str, Any]:
+    """Load the per-category, per-word practice sentences for SPEAKING mode."""
+    return _load_json("lesson_sentences.json")
+
+
+def load_lesson_quiz_questions() -> dict[str, Any]:
+    """Load the per-category, per-word quiz Q&A bank for QUIZ mode."""
+    return _load_json("lesson_quiz_questions.json")
+
+
+def get_quiz_questions(topic_slug: str, word: str) -> list[dict[str, str]]:
+    """Return the quiz-question list for a given (topic, word).
+
+    Each item is ``{"question": str, "type": str, "answer": str}``.
+    Falls back to two generic either-or questions if the JSON has no entry.
+    """
+    if not word:
+        return []
+    data = load_lesson_quiz_questions() or {}
+    if not isinstance(data, dict):
+        return []
+    topic_block = data.get((topic_slug or "").lower())
+    questions: list[dict[str, str]] = []
+    if isinstance(topic_block, dict):
+        raw = topic_block.get(word.lower())
+        if isinstance(raw, list):
+            for item in raw:
+                if isinstance(item, dict):
+                    q = str(item.get("question") or "").strip()
+                    if q:
+                        questions.append(
+                            {
+                                "question": q,
+                                "type": str(item.get("type") or "either_or").strip(),
+                                "answer": str(item.get("answer") or "").strip(),
+                            }
+                        )
+                elif isinstance(item, str) and item.strip():
+                    questions.append(
+                        {
+                            "question": item.strip(),
+                            "type": "either_or",
+                            "answer": "",
+                        }
+                    )
+    if questions:
+        return questions
+    w = word.strip()
+    if not w:
+        return []
+    article = "an" if w[:1].lower() in "aeiou" else "a"
+    return [
+        {
+            "question": f"Do you see {article} {w} on the screen — yes or no?",
+            "type": "yes_no",
+            "answer": "yes",
+        },
+        {
+            "question": f"Is {article} {w} big or small?",
+            "type": "size",
+            "answer": "big",
+        },
+    ]
+
+
+def get_speaking_sentences(topic_slug: str, word: str) -> list[str]:
+    """Return the practice-sentences list for a given (topic, word).
+
+    Falls back to a tiny generic set if the JSON has no entry — speaking
+    mode must never silently leave the LLM without something to model.
+    """
+    if not word:
+        return []
+    data = load_lesson_sentences() or {}
+    if not isinstance(data, dict):
+        return []
+    topic_block = data.get((topic_slug or "").lower())
+    sentences: list[str] = []
+    if isinstance(topic_block, dict):
+        raw = topic_block.get(word.lower())
+        if isinstance(raw, list):
+            sentences = [str(s).strip() for s in raw if isinstance(s, str) and s.strip()]
+    if sentences:
+        return sentences
+    # Fallback: generic three-step ramp using just the word, so the speaking
+    # flow keeps working even before someone curates sentences for a topic.
+    w = word.strip()
+    if not w:
+        return []
+    article = "an" if w[:1].lower() in "aeiou" else "a"
+    return [
+        f"I see {article} {w}.",
+        f"The {w} is here.",
+        f"I really like the {w} a lot.",
+    ]
+
+
 def reload_prompt_configs() -> None:
     """Clear the in-memory cache so files are re-read on next access."""
     with _CACHE_LOCK:
@@ -111,8 +208,11 @@ def _lesson_picture_sync_block(
         parts.append(f"Example: {ex.strip()}")
     if mode == "quiz":
         parts.append(
-            "Quiz mode: each question must match the picture currently shown — call the tool as you switch "
-            "to the next word so you never ask about a lion while the child still sees a banana."
+            "Quiz mode: ask the EXACT curated questions from your live state (from "
+            "lesson_quiz_questions.json) — do NOT invent questions. Each picture gets up to 2 "
+            "questions. To switch to the next picture, SAY the next word from the fixed list aloud "
+            "as a complete spoken word — the app syncs the picture automatically. NEVER ask about a "
+            "lion while the child still sees a banana, and never mention tools or function names in speech."
         )
     elif mode == "vocabulary":
         parts.append(
@@ -251,6 +351,132 @@ def _build_response_style_examples(templates: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Mode block builder — unified across vocabulary / speaking / quiz so each mode
+# is loud about its identity, rules, and the things it will REFUSE to do. The
+# personas and flows live in ``ai_prompts.json`` (vocabularyTeachingMode /
+# speakingCoachMode / quizMode); the fallbacks here only kick in if the JSON
+# is missing keys, so the agent never goes silent on a bad config.
+# ---------------------------------------------------------------------------
+
+_MODE_FALLBACKS: dict[str, dict[str, Any]] = {
+    "vocabulary": {
+        "json_key": "vocabularyTeachingMode",
+        "headline": "LEARN VOCABULARY — TEACHING MODE (curious explorer)",
+        "persona": (
+            "You are an AI TEACHER for ages 5–8 — a curious, gentle storyteller. "
+            "Your ONE job is to make the child UNDERSTAND each word."
+        ),
+        "flow": [
+            "Reveal the word with excitement.",
+            "Give a simple meaning in one short sentence.",
+            "Add ONE tiny vivid detail or fun fact.",
+            "Ask the child to repeat the word once.",
+            "Ask ONE comprehension question and WAIT for their answer.",
+        ],
+        "forbidden": [
+            "Do NOT advance to the next word until they answer the comprehension question.",
+            "Do NOT score pronunciation strictly — meaning matters more than perfect sound here.",
+            "Do NOT skip the meaning, fun fact, or example just to save time.",
+        ],
+    },
+    "speaking": {
+        "json_key": "speakingCoachMode",
+        "headline": "SPEAKING PRACTICE — COACH MODE (energetic pronunciation drill)",
+        "persona": (
+            "You are a SPEAKING COACH — energetic, encouraging, and FAST. "
+            "Your ONE job is to make the child speak each word loud, clear, and confident."
+        ),
+        "flow": [
+            "Model a short kid-friendly sentence using the word.",
+            "Ask the child to repeat — the app scores their attempt.",
+            "If clear (≥90): big cheer, move to the next word.",
+            "If close (70–89): one syllable-break tip, then 'say it again!'.",
+            "If quiet/garbled (<70): 'good try! louder this time!' and re-model.",
+            "After 3 attempts on one word, gently move on (no shame).",
+        ],
+        "forbidden": [
+            "Do NOT teach what words mean — no definitions, no fun facts.",
+            "Do NOT ask quiz-style questions like 'where does it live?'.",
+            "Do NOT spell words letter-by-letter — only whole words or syllables.",
+        ],
+    },
+    "quiz": {
+        "json_key": "quizMode",
+        "headline": "PICTURE QUIZ — GAME-SHOW MODE (curated Q&A from live state)",
+        "persona": (
+            "You are a SILLY GAME-SHOW HOST. Ask the EXACT curated questions from live state — "
+            "never invent your own. Test what the child KNOWS about each picture."
+        ),
+        "flow": [
+            "Cue the picture with showmanship.",
+            "Ask the EXACT question from live state VERBATIM.",
+            "React playfully — never call it 'wrong'; use the reference answer to hint.",
+            "Optional second curated question (different type) if the first answer was fast.",
+            "After at most 2 questions, say the next word aloud and ask the new picture's first question.",
+        ],
+        "forbidden": [
+            "Do NOT invent your own questions — use EXACT ones from live state.",
+            "Do NOT ask the child to PRONOUNCE the word — quiz mode does NOT score speech.",
+            "Do NOT teach meanings or give long fun facts.",
+            "Do NOT exceed 2 questions per picture.",
+            "Do NOT ask the same question type twice in a row about the same picture.",
+        ],
+    },
+}
+
+
+def _build_mode_block(prompts: dict[str, Any], mode: str) -> str:
+    """Return the mode-specific instructions block (vocabulary / speaking / quiz).
+
+    Pulls ``persona`` / ``flow`` / ``forbidden`` / ``example`` from the matching
+    ``ai_prompts.json`` block and falls back to baked-in defaults if anything is
+    missing. Each block is shaped IDENTICALLY across modes so the LLM always
+    sees: headline → persona → flow → hard rules → guiding example. Identical
+    structure makes it easy for the model to swap modes without bleeding
+    behaviours across them.
+    """
+    fb = _MODE_FALLBACKS.get(mode)
+    if not fb:
+        return ""
+    cfg = prompts.get(fb["json_key"]) or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+
+    headline = (cfg.get("headline") or "").strip() or fb["headline"]
+    persona = (cfg.get("persona") or "").strip() or fb["persona"]
+    flow = cfg.get("flow") if isinstance(cfg.get("flow"), list) else []
+    if not flow:
+        flow = fb["flow"]
+    forbidden = cfg.get("forbidden") if isinstance(cfg.get("forbidden"), list) else []
+    if not forbidden:
+        forbidden = fb["forbidden"]
+    example = (cfg.get("example") or "").strip()
+
+    flow_lines = "\n".join(f"{i + 1}) {step}" for i, step in enumerate(flow))
+    forbidden_lines = "\n".join(f"- {rule}" for rule in forbidden)
+
+    parts = [
+        f"\nMode: {headline}",
+        f"Role for this mode: {persona}",
+        "",
+        "Per-turn flow (follow in order — short turns, child speaks between steps):",
+        flow_lines,
+    ]
+    if forbidden_lines:
+        parts += [
+            "",
+            "HARD RULES — never break these in this mode:",
+            forbidden_lines,
+        ]
+    if example:
+        parts += [
+            "",
+            f"Guiding example: {example}",
+        ]
+    return "\n".join(parts) + "\n"
+
+
 def _build_pronunciation_policy(rules: dict[str, Any]) -> str:
     if not rules:
         return ""
@@ -386,97 +612,7 @@ def build_kid_tutor_instructions(
     fixed_block = _fixed_word_list_block(fixed_words, mode)
     picture_sync_block = _lesson_picture_sync_block(prompts, fixed_words, mode)
 
-    if mode == "vocabulary":
-        teach = prompts.get("vocabularyTeachingMode") or {}
-        persona = (teach.get("persona") or "").strip() or (
-            "Act as a warm AI teacher introducing new English words to children aged 5–8."
-        )
-        flow_steps = teach.get("flow") if isinstance(teach.get("flow"), list) else []
-        if not flow_steps:
-            flow_steps = [
-                "Announce the word with excitement.",
-                "Give a simple meaning in one short sentence.",
-                "Reference the on-screen picture.",
-                "Give one example sentence.",
-                "Ask the child to repeat the word.",
-                "Ask ONE simple comprehension question about the word.",
-            ]
-        flow_lines = "\n".join(f"{i + 1}) {step}" for i, step in enumerate(flow_steps))
-        example_line = (teach.get("example") or "").strip()
-        mode_block = (
-            "\nMode: LEARN VOCABULARY — TEACHING MODE (AI teacher introducing new concepts)\n"
-            f"Role for this mode: {persona}\n"
-            "This is a **teaching lesson**, not a speed drill. The child should learn what the "
-            "word **means** and use it. Feel like an AI teacher introducing new concepts with "
-            "warmth, curiosity, and tiny fun facts.\n\n"
-            "Per-word teaching flow (follow in order, do not skip steps):\n"
-            f"{flow_lines}\n"
-            "Only after the comprehension question is answered, celebrate briefly and move to the "
-            "next word.\n"
-            "Do NOT introduce later words from the list in the same turn. Do NOT shortcut to "
-            "pronunciation alone — meaning + example + comprehension are required.\n"
-            "Keep each step short (1–2 sentences); the whole flow may span 3–5 short tutor turns "
-            "with the child speaking in between.\n"
-            + (f"\nGuiding example: {example_line}\n" if example_line else "")
-        )
-    elif mode == "speaking":
-        coach = prompts.get("speakingCoachMode") or {}
-        persona = (coach.get("persona") or "").strip() or (
-            "Act as a kind speaking coach for kids. Correct gently and encourage repetition."
-        )
-        flow_steps = coach.get("flow") if isinstance(coach.get("flow"), list) else []
-        if not flow_steps:
-            flow_steps = [
-                "Model the word or a short kid-friendly sentence using it.",
-                "Ask the child to repeat after you.",
-                "Listen to their attempt (the app scores pronunciation).",
-                "If close, give ONE syllable-break tip — never spell letter-by-letter.",
-                "Praise effort first; ask for one more clear repeat.",
-                "Move on after a clear correct attempt.",
-            ]
-        flow_lines = "\n".join(f"- {step}" for step in flow_steps)
-        example_line = (coach.get("example") or "").strip()
-        mode_block = (
-            "\nMode: SPEAKING PRACTICE — CONVERSATION + PRONUNCIATION COACH\n"
-            f"Role for this mode: {persona}\n"
-            "This is a **pronunciation and confidence workout**, not a vocabulary lesson. Do NOT "
-            "teach definitions. Focus only on: pronunciation, fluency, confidence, and the "
-            "habit of speaking.\n\n"
-            "Per-word coaching loop:\n"
-            f"{flow_lines}\n"
-            "When you model speech, prefer ONE short kid-friendly sentence using the word "
-            '(e.g. "Say: I like apples.") rather than just the bare word — sentences build '
-            "fluency. After the child repeats, react to what they actually said:\n"
-            "- Strong attempt: celebrate, then move on (\"Great speaking! Next word ready!\").\n"
-            "- Close attempt: praise effort, then ONE syllable-break tip "
-            "(e.g. \"Say apples slowly: AP-PLES\"). Ask for one more repeat.\n"
-            "- Soft / quiet attempt: \"Good try! A little louder — say it with me!\" then model again.\n"
-            "ONE or TWO short sentences per tutor turn. No \"what does X mean?\". No comprehension "
-            "quizzes. Never mention other list words ahead — only the current picture word.\n"
-            + (f"\nGuiding example: {example_line}\n" if example_line else "")
-        )
-    elif mode == "quiz":
-        mode_block = (
-            "\nMode: QUIZ — picture quiz on the current word\n"
-            "The child sees **one big image** at a time; it always matches the **current word** from "
-            "the fixed list (same order). Treat every turn like a mini game show about **what is on "
-            "screen right now**.\n\n"
-            "- Point at the picture in words: e.g. \"On your screen, do you see the elephant?\", "
-            "\"Let's peek at our picture — hmm, what colour is it?\", "
-            "\"Does this animal live on a farm or in the jungle?\"\n"
-            "- Ask **fun**, kid-sized questions **only** about that object/animal/thing: colour, sound, "
-            "size, food, home/habitat, number of legs, silly this-or-that, or a rhyming teaser — never "
-            "a boring spelling test unless you make it a silly chant.\n"
-            "- One or two short questions per turn is enough; keep answers upbeat "
-            "(\"Nice guess!\", \"Ooh, thinking cap on!\") and never say \"wrong\" — reframe as a "
-            "playful hint tied to the image.\n"
-            "- Stay on this picture/word until you are done quizzing it; **then** use the internal "
-            "picture-sync tools **before** you start asking about the next word (never say tool or "
-            "function names aloud).\n"
-            "- Mix super-easy wins with one slightly trickier question **still about the same picture**."
-        )
-    else:
-        mode_block = ""
+    mode_block = _build_mode_block(prompts, mode)
 
     sections = [
         personality_block,

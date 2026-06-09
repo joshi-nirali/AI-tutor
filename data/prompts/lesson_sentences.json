@@ -1,0 +1,453 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "description": "Per-category, per-word practice sentences for SPEAKING PRACTICE mode. Three sentences per word, ordered by difficulty: S1 = 3-4 words, S2 = 4-5 words, S3 = 5-7 words. Age target: 4-7. The agent models the exact sentence; the app scores the whole sentence (not just the lesson word).",
+    "ordering": ["simple", "medium", "longer"],
+    "max_words_per_sentence": 7
+  },
+  "animals": {
+    "cat": [
+      "I see a cat.",
+      "The cat is small.",
+      "My cat loves to play."
+    ],
+    "dog": [
+      "I see a dog.",
+      "The dog is happy.",
+      "My dog can run very fast."
+    ],
+    "bird": [
+      "I see a bird.",
+      "The bird can fly.",
+      "Birds sing in the morning."
+    ],
+    "fish": [
+      "I see a fish.",
+      "Fish swim in water.",
+      "The fish has shiny scales."
+    ],
+    "elephant": [
+      "I see an elephant.",
+      "Elephants are very big.",
+      "An elephant has a long trunk."
+    ],
+    "lion": [
+      "I see a lion.",
+      "The lion is brave.",
+      "Lions roar in the jungle."
+    ],
+    "rabbit": [
+      "I see a rabbit.",
+      "Rabbits hop very fast.",
+      "My rabbit loves to eat carrots."
+    ],
+    "frog": [
+      "I see a frog.",
+      "Frogs jump on lily pads.",
+      "The little frog says ribbit ribbit."
+    ],
+    "butterfly": [
+      "I see a butterfly.",
+      "Butterflies have pretty wings.",
+      "The butterfly flies in the garden."
+    ],
+    "horse": [
+      "I see a horse.",
+      "The horse can gallop.",
+      "Horses love to eat green grass."
+    ]
+  },
+  "colors": {
+    "red": [
+      "I like red.",
+      "The apple is red.",
+      "My new shoes are red."
+    ],
+    "blue": [
+      "I see blue.",
+      "The sky is blue.",
+      "I love my big blue cup."
+    ],
+    "yellow": [
+      "I like yellow.",
+      "The sun is yellow.",
+      "Yellow bananas taste so sweet."
+    ],
+    "green": [
+      "I see green.",
+      "The grass is green.",
+      "My green frog jumps very high."
+    ],
+    "orange": [
+      "I like orange.",
+      "The pumpkin is orange.",
+      "Orange juice tastes really yummy."
+    ],
+    "purple": [
+      "I see purple.",
+      "The grape is purple.",
+      "I have a soft purple bear."
+    ],
+    "pink": [
+      "I like pink.",
+      "The flower is pink.",
+      "My little sister loves pink shoes."
+    ],
+    "black": [
+      "I see black.",
+      "The cat is black.",
+      "Night sky has black clouds."
+    ],
+    "white": [
+      "I like white.",
+      "The cloud is white.",
+      "Soft white snow is so cold."
+    ],
+    "brown": [
+      "I see brown.",
+      "The bear is brown.",
+      "My teddy bear is fluffy and brown."
+    ]
+  },
+  "shapes": {
+    "circle": [
+      "I see a circle.",
+      "The wheel is a circle.",
+      "A pizza is shaped like a circle."
+    ],
+    "square": [
+      "I see a square.",
+      "The box is a square.",
+      "Four sides make a perfect square."
+    ],
+    "triangle": [
+      "I see a triangle.",
+      "A slice is a triangle.",
+      "Three sides make a tiny triangle."
+    ],
+    "star": [
+      "I see a star.",
+      "Stars shine in the sky.",
+      "I drew a bright yellow star."
+    ],
+    "heart": [
+      "I see a heart.",
+      "The heart is pink.",
+      "I love my mommy with all my heart."
+    ],
+    "rectangle": [
+      "I see a rectangle.",
+      "The door is a rectangle.",
+      "Books are shaped like little rectangles."
+    ],
+    "oval": [
+      "I see an oval.",
+      "An egg is an oval.",
+      "My plate is shaped like an oval."
+    ],
+    "diamond": [
+      "I see a diamond.",
+      "The kite is a diamond.",
+      "A diamond shape sparkles in the sun."
+    ]
+  },
+  "fairytales": {
+    "castle": [
+      "I see a castle.",
+      "The castle is huge.",
+      "A king lives in a tall castle."
+    ],
+    "princess": [
+      "I see a princess.",
+      "The princess is kind.",
+      "The princess wears a sparkling pink dress."
+    ],
+    "prince": [
+      "I see a prince.",
+      "The prince is brave.",
+      "The prince rides a white horse."
+    ],
+    "dragon": [
+      "I see a dragon.",
+      "The dragon breathes fire.",
+      "A green dragon flies over the castle."
+    ],
+    "fairy": [
+      "I see a fairy.",
+      "The fairy can fly.",
+      "A tiny fairy waves a magic wand."
+    ],
+    "magic": [
+      "I love magic.",
+      "Magic is very fun.",
+      "The fairy makes some sparkly magic."
+    ],
+    "king": [
+      "I see a king.",
+      "The king is wise.",
+      "The king sits on a golden throne."
+    ],
+    "queen": [
+      "I see a queen.",
+      "The queen is kind.",
+      "The queen wears a shiny gold crown."
+    ],
+    "wand": [
+      "I see a wand.",
+      "The wand is magical.",
+      "The fairy waves her magic wand."
+    ],
+    "crown": [
+      "I see a crown.",
+      "The crown is gold.",
+      "The queen has a sparkly gold crown."
+    ]
+  },
+  "foods": {
+    "banana": [
+      "I like bananas.",
+      "The banana is yellow.",
+      "Monkeys love to eat sweet bananas."
+    ],
+    "apple": [
+      "I like apples.",
+      "The apple is red.",
+      "An apple a day keeps me healthy."
+    ],
+    "grape": [
+      "I like grapes.",
+      "Grapes are small and round.",
+      "Purple grapes are very juicy and sweet."
+    ],
+    "bread": [
+      "I like bread.",
+      "The bread is warm.",
+      "We eat bread with butter and jam."
+    ],
+    "milk": [
+      "I drink milk.",
+      "The milk is cold.",
+      "I drink warm milk every night."
+    ],
+    "cheese": [
+      "I like cheese.",
+      "The cheese is yummy.",
+      "Cheese makes my pizza so tasty."
+    ]
+  },
+  "numbers": {
+    "one": [
+      "I have one.",
+      "I see one cat.",
+      "There is just one bright sun."
+    ],
+    "two": [
+      "I have two.",
+      "I see two birds.",
+      "I have two eyes and two ears."
+    ],
+    "three": [
+      "I have three.",
+      "I see three balls.",
+      "Three little kittens were playing outside."
+    ],
+    "four": [
+      "I have four.",
+      "I see four dogs.",
+      "Cats and dogs both have four legs."
+    ],
+    "five": [
+      "I have five.",
+      "I see five stars.",
+      "I can count five fingers on my hand."
+    ],
+    "six": [
+      "I have six.",
+      "I see six apples.",
+      "Six bees buzz around the bright flower."
+    ],
+    "seven": [
+      "I have seven.",
+      "I see seven cars.",
+      "There are seven days in one week."
+    ],
+    "eight": [
+      "I have eight.",
+      "I see eight stars.",
+      "An octopus has eight long wiggly arms."
+    ],
+    "nine": [
+      "I have nine.",
+      "I see nine balloons.",
+      "Nine yellow balloons float up to the sky."
+    ],
+    "ten": [
+      "I have ten.",
+      "I see ten fingers.",
+      "I have ten toes on my two feet."
+    ]
+  },
+  "body_parts": {
+    "hand": [
+      "I see my hand.",
+      "I clap with my hands.",
+      "I wave hello with my hand."
+    ],
+    "nose": [
+      "I have a nose.",
+      "My nose can smell flowers.",
+      "I smell a sweet apple with my nose."
+    ],
+    "eyes": [
+      "I have two eyes.",
+      "My eyes can see everything.",
+      "I can see a rainbow with my eyes."
+    ],
+    "ears": [
+      "I have two ears.",
+      "My ears can hear music.",
+      "I hear birds singing with my ears."
+    ],
+    "head": [
+      "This is my head.",
+      "I nod my head yes.",
+      "I wear a hat on my head."
+    ],
+    "feet": [
+      "I have two feet.",
+      "I run with my feet.",
+      "I jump high with my two feet."
+    ],
+    "fingers": [
+      "I have ten fingers.",
+      "Fingers help me hold things.",
+      "I can count to ten on my fingers."
+    ]
+  },
+  "weather": {
+    "sun": [
+      "I see the sun.",
+      "The sun is bright.",
+      "The sun shines warm in the sky."
+    ],
+    "rain": [
+      "I see the rain.",
+      "The rain falls down.",
+      "I splash in puddles when it rains."
+    ],
+    "cloud": [
+      "I see a cloud.",
+      "The cloud is fluffy.",
+      "White clouds float across the blue sky."
+    ],
+    "snow": [
+      "I see the snow.",
+      "The snow is cold.",
+      "I make a big snowman in the snow."
+    ],
+    "wind": [
+      "I feel the wind.",
+      "The wind blows strong.",
+      "Wind makes my kite fly very high."
+    ],
+    "rainbow": [
+      "I see a rainbow.",
+      "Rainbows have many colors.",
+      "A rainbow comes after the rain stops."
+    ],
+    "storm": [
+      "I see a storm.",
+      "The storm is loud.",
+      "Thunder and lightning come in a storm."
+    ],
+    "summer": [
+      "I love summer.",
+      "Summer is very hot.",
+      "I eat ice cream in the summer."
+    ]
+  },
+  "vehicles": {
+    "car": [
+      "I see a car.",
+      "The car is fast.",
+      "We go to school in a car."
+    ],
+    "bus": [
+      "I see a bus.",
+      "The bus is yellow.",
+      "I ride a school bus every day."
+    ],
+    "train": [
+      "I see a train.",
+      "The train is long.",
+      "The train goes choo choo down the track."
+    ],
+    "airplane": [
+      "I see an airplane.",
+      "Airplanes fly very high.",
+      "An airplane flies above the white clouds."
+    ],
+    "bicycle": [
+      "I have a bicycle.",
+      "The bicycle has wheels.",
+      "I ride my bicycle in the park."
+    ],
+    "boat": [
+      "I see a boat.",
+      "The boat is on water.",
+      "We row our boat across the lake."
+    ],
+    "truck": [
+      "I see a truck.",
+      "The truck is big.",
+      "The big truck carries lots of things."
+    ],
+    "helicopter": [
+      "I see a helicopter.",
+      "Helicopters can fly up.",
+      "A helicopter spins its blades very fast."
+    ]
+  },
+  "fruits": {
+    "mango": [
+      "I like mangoes.",
+      "The mango is sweet.",
+      "Yellow mangoes are very juicy and yummy."
+    ],
+    "strawberry": [
+      "I like strawberries.",
+      "Strawberries are bright red.",
+      "I eat strawberries with cold ice cream."
+    ],
+    "watermelon": [
+      "I like watermelon.",
+      "Watermelon is so juicy.",
+      "Big green watermelons are red inside."
+    ],
+    "pineapple": [
+      "I like pineapples.",
+      "The pineapple is yellow.",
+      "Pineapples are sweet and a little prickly."
+    ],
+    "cherry": [
+      "I like cherries.",
+      "Cherries are tiny and red.",
+      "I love cherries on top of my cake."
+    ],
+    "peach": [
+      "I like peaches.",
+      "The peach is fuzzy.",
+      "Sweet peaches are pink and orange inside."
+    ],
+    "kiwi": [
+      "I like kiwis.",
+      "The kiwi is green.",
+      "Kiwis are fuzzy brown on the outside."
+    ],
+    "coconut": [
+      "I like coconuts.",
+      "The coconut is brown.",
+      "Coconuts grow high up in tall trees."
+    ]
+  }
+}

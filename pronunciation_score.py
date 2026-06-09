@@ -402,6 +402,101 @@ def score_utterance(expected: str, transcript: str, thresholds: dict[str, Any]) 
     }
 
 
+_FILLER_WORDS_FOR_SENTENCE: frozenset[str] = frozenset(
+    {"uh", "um", "uhm", "er", "erm", "hmm", "mm", "ahh", "ah", "oh"}
+)
+
+
+def score_sentence(
+    target_sentence: str,
+    transcript: str,
+    thresholds: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Score how closely a child's transcript repeats a target sentence (0–100).
+
+    Designed for messy STT from young children: every target word is matched
+    fuzzily (Levenshtein) against the transcript so "appul" still matches
+    "apple". The final score is a blend of word-coverage (75 %) and
+    length-similarity (25 %), so dropping a single word costs less than
+    dropping half the sentence. Filler words (uh / um / hmm) in the
+    transcript are stripped before the length check so a kid who hesitates
+    isn't penalised for it.
+
+    Returns a dict in the same shape as ``score_utterance`` (``score``,
+    ``band``, ``best_token``, ``expected_normalized``) plus three sentence-
+    specific extras: ``matched``, ``total``, ``missing`` (target words the
+    child clearly skipped).
+    """
+    exp_tokens = [_normalize_word(t) for t in _tokens(target_sentence)]
+    exp_tokens = [t for t in exp_tokens if t]
+    if not exp_tokens:
+        return {
+            "score": 0,
+            "band": "incorrect",
+            "best_token": "",
+            "expected_normalized": "",
+            "matched": 0,
+            "total": 0,
+            "missing": [],
+        }
+
+    transcript_raw = [_normalize_word(t) for t in _tokens(transcript)]
+    transcript_tokens = [
+        t for t in transcript_raw if t and t not in _FILLER_WORDS_FOR_SENTENCE
+    ]
+
+    # Acceptance threshold per word: short words allow ~1 edit, long words ~30 %.
+    def _accept_dist(word: str) -> int:
+        return max(1, len(word) // 3)
+
+    matched = 0
+    missing: list[str] = []
+    transcript_avail = list(transcript_tokens)
+    for ew in exp_tokens:
+        best_idx = -1
+        best_dist = 9999
+        for i, tw in enumerate(transcript_avail):
+            d = _levenshtein(ew, tw)
+            if d < best_dist:
+                best_dist = d
+                best_idx = i
+                if d == 0:
+                    break
+        if best_idx >= 0 and best_dist <= _accept_dist(ew):
+            matched += 1
+            transcript_avail.pop(best_idx)
+        else:
+            missing.append(ew)
+
+    coverage = matched / len(exp_tokens)
+    elen = len(exp_tokens)
+    tlen = max(len(transcript_tokens), 1)
+    length_ratio = min(elen, tlen) / max(elen, tlen)
+
+    score = round(100 * (0.75 * coverage + 0.25 * length_ratio))
+    score = max(0, min(100, score))
+
+    th = thresholds or {}
+    correct = int(th.get("correct", 90))
+    almost = int(th.get("almostCorrect", 70))
+    if score >= correct:
+        band = "correct"
+    elif score >= almost:
+        band = "almost"
+    else:
+        band = "incorrect"
+
+    return {
+        "score": score,
+        "band": band,
+        "best_token": " ".join(transcript_tokens),
+        "expected_normalized": " ".join(exp_tokens),
+        "matched": matched,
+        "total": len(exp_tokens),
+        "missing": missing,
+    }
+
+
 def transcript_dedupe_key(transcript: str) -> str:
     """Stable key for ignoring duplicate STT finals of the same spoken utterance."""
     key = _phrase_key(transcript)

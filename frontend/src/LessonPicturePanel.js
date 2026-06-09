@@ -49,6 +49,7 @@ export default function LessonPicturePanel({
   const [fetchError, setFetchError] = useState(null);
   const [index, setIndex] = useState(0);
   const [pronunciationHint, setPronunciationHint] = useState(null);
+  const [quizHint, setQuizHint] = useState(null);
   const [pictureFocus, setPictureFocus] = useState(false);
   const [dockActive, setDockActive] = useState("picture");
   const [lessonDone, setLessonDone] = useState(null);
@@ -62,6 +63,12 @@ export default function LessonPicturePanel({
   useEffect(() => {
     setDockActive("picture");
   }, [index]);
+
+  useEffect(() => {
+    if (lessonMode === "quiz") {
+      setQuizHint(null);
+    }
+  }, [index, lessonMode]);
 
   useEffect(() => {
     if (!apiBase || !topicSlug) {
@@ -156,6 +163,19 @@ export default function LessonPicturePanel({
             applyAgentPictureIndex(msg.pictureIndex);
           }
         }
+        if (msg.type === "quiz_question") {
+          setQuizHint(msg);
+        }
+        if (msg.type === "quiz_result") {
+          setQuizHint((prev) => ({
+            ...(prev || {}),
+            ...msg,
+            question: prev?.question || msg.lastQuestion || "",
+          }));
+          if (Number.isFinite(Number(msg.pictureIndex))) {
+            applyAgentPictureIndex(msg.pictureIndex);
+          }
+        }
         if (msg.type === "lesson_set_index") {
           applyAgentPictureIndex(msg.index);
         }
@@ -219,6 +239,60 @@ export default function LessonPicturePanel({
   const awaitingCheck =
     lessonMode === "vocabulary" &&
     (pronunciationHint?.awaitingComprehension || flowPhase === "quick_check");
+
+  // Speaking mode: derive the currently-modelled sentence and the per-word
+  // progress (e.g. "1 of 3 sentences passed for this word") straight from
+  // the latest ``pronunciation_result`` for THIS picture. We only trust the
+  // hint if its ``wordIndex`` matches the picture currently on screen so
+  // stale results from a previous word never show up under a new picture.
+  const speakingSentenceData = useMemo(() => {
+    if (lessonMode !== "speaking") return null;
+    const hint = pronunciationHint;
+    if (!hint || hint.wordIndex !== index) return null;
+    const sentencesTarget = Number.isFinite(Number(hint.sentencesTarget))
+      ? Math.max(1, Math.floor(Number(hint.sentencesTarget)))
+      : 3;
+    const sentencesPassed = Number.isFinite(Number(hint.sentencesPassed))
+      ? Math.max(0, Math.min(sentencesTarget, Math.floor(Number(hint.sentencesPassed))))
+      : 0;
+    return {
+      currentSentence: hint.expectedSentence || "",
+      sentencesTarget,
+      sentencesPassed,
+      passed: Boolean(hint.passed),
+      attemptsMaxed: Boolean(hint.attemptsMaxed),
+      missing: Array.isArray(hint.missing) ? hint.missing : [],
+      band: hint.band || null,
+    };
+  }, [lessonMode, pronunciationHint, index]);
+
+  const quizQuestionData = useMemo(() => {
+    if (lessonMode !== "quiz" || !quizHint) return null;
+    const wi = Number.isFinite(Number(quizHint.wordIndex))
+      ? Math.floor(Number(quizHint.wordIndex))
+      : Number.isFinite(Number(quizHint.pictureIndex))
+        ? Math.floor(Number(quizHint.pictureIndex))
+        : null;
+    if (wi !== null && wi !== index) return null;
+    const questionsTarget = Number.isFinite(Number(quizHint.questionsTarget))
+      ? Math.max(1, Math.floor(Number(quizHint.questionsTarget)))
+      : 2;
+    const questionsAnswered = Number.isFinite(Number(quizHint.questionsAnswered))
+      ? Math.max(0, Math.min(questionsTarget, Math.floor(Number(quizHint.questionsAnswered))))
+      : Number.isFinite(Number(quizHint.questionIndex))
+        ? Math.max(0, Math.floor(Number(quizHint.questionIndex)))
+        : 0;
+    const currentQuestion =
+      quizHint.question || quizHint.lastQuestion || "";
+    return {
+      currentQuestion,
+      questionsTarget,
+      questionsAnswered,
+      childAnswer: quizHint.childAnswer || "",
+      questionType: quizHint.questionType || quizHint.lastQuestionType || "",
+    };
+  }, [lessonMode, quizHint, index]);
+
   const promptPhrase = current
     ? awaitingCheck && modeUi.promptQuickCheck
       ? modeUi.promptQuickCheck(current.word)
@@ -281,14 +355,32 @@ export default function LessonPicturePanel({
     return modeUi.scoreOther;
   })();
 
+  const quizFeedbackBlock =
+    lessonMode === "quiz" &&
+    quizQuestionData?.childAnswer ? (
+      <p className="lesson-visual-score lesson-visual-score--card lesson-visual-score--correct" role="status">
+        You said: “{quizQuestionData.childAnswer}” — {modeUi.scoreCorrect}
+      </p>
+    ) : null;
+
   const scoreBlock =
-    pronunciationHint && pronunciationHint.wordIndex === index ? (
+    pronunciationHint &&
+    pronunciationHint.wordIndex === index &&
+    typeof pronunciationHint.score === "number" ? (
       <p
         className={`lesson-visual-score lesson-visual-score--card lesson-visual-score--${pronunciationHint.band || "other"}`}
         role="status"
       >
         {pronunciationHint.score}/100 — {scoreMessage}
         {pronunciationHint.maxedOut ? " · try the next word when you’re ready" : null}
+        {lessonMode === "speaking" && Number.isFinite(Number(pronunciationHint.matched)) ? (
+          <span className="lesson-visual-sentence-meta">
+            {" "}· {pronunciationHint.matched}/{pronunciationHint.totalWords} words matched
+            {Array.isArray(pronunciationHint.missing) && pronunciationHint.missing.length > 0
+              ? ` · missed: ${pronunciationHint.missing.slice(0, 3).map((w) => `“${w}”`).join(", ")}`
+              : ""}
+          </span>
+        ) : null}
         {pronunciationHint.avatarCue ? (
           <span
             className="lesson-visual-avatar-cue"
@@ -383,16 +475,150 @@ export default function LessonPicturePanel({
               className="lesson-vocab-steps lesson-vocab-steps--speaking"
               aria-label="Speaking coach steps"
             >
-              {modeUi.steps.map((label, i) => (
-                <li key={label} className={i === 0 ? "is-active" : ""}>
-                  {label}
-                </li>
-              ))}
+              {modeUi.steps.map((label, i) => {
+                // Step active rule: 0 = "Coach says" (default before any score),
+                // 2 = "Score sentence" (active right after a score arrives),
+                // 3 = "Next sentence" (active when the child has just passed).
+                let active = i === 0;
+                if (speakingSentenceData) {
+                  if (speakingSentenceData.passed) {
+                    active = i === 3;
+                  } else if (speakingSentenceData.band) {
+                    active = i === 2;
+                  } else {
+                    active = i === 0;
+                  }
+                }
+                return (
+                  <li key={label} className={active ? "is-active" : ""}>
+                    {label}
+                  </li>
+                );
+              })}
             </ol>
           ) : null}
-          <p className="lesson-speaking-tag" role="status">
-            Coach models a sentence — you repeat clearly, then move on
-          </p>
+          {speakingSentenceData?.currentSentence ? (
+            <p
+              className="lesson-speaking-sentence"
+              role="status"
+              aria-label={`Repeat this sentence: ${speakingSentenceData.currentSentence}`}
+            >
+              <span className="lesson-speaking-sentence-label">Say with coach:</span>
+              <span className="lesson-speaking-sentence-text">
+                “{speakingSentenceData.currentSentence}”
+              </span>
+            </p>
+          ) : (
+            <p className="lesson-speaking-tag" role="status">
+              Coach models a sentence — you repeat the WHOLE thing, then move on
+            </p>
+          )}
+          {speakingSentenceData ? (
+            <p
+              className="lesson-speaking-progress"
+              role="status"
+              aria-label={`${speakingSentenceData.sentencesPassed} of ${speakingSentenceData.sentencesTarget} sentences passed for this word`}
+            >
+              <span className="lesson-speaking-progress-label">
+                Sentences for {current?.word || "this word"}:
+              </span>
+              <span className="lesson-speaking-progress-dots" aria-hidden>
+                {Array.from({ length: speakingSentenceData.sentencesTarget }).map(
+                  (_, i) => (
+                    <span
+                      key={i}
+                      className={
+                        "lesson-speaking-progress-dot" +
+                        (i < speakingSentenceData.sentencesPassed
+                          ? " is-passed"
+                          : i === speakingSentenceData.sentencesPassed
+                            ? " is-current"
+                            : "")
+                      }
+                    />
+                  )
+                )}
+              </span>
+              <span className="lesson-speaking-progress-count">
+                {speakingSentenceData.sentencesPassed}/
+                {speakingSentenceData.sentencesTarget}
+              </span>
+            </p>
+          ) : null}
+        </>
+      ) : null}
+      {lessonMode === "quiz" ? (
+        <>
+          {modeUi.steps ? (
+            <ol
+              className="lesson-vocab-steps lesson-vocab-steps--quiz"
+              aria-label="Quiz steps"
+            >
+              {modeUi.steps.map((label, i) => {
+                let active = i === 0;
+                if (quizQuestionData) {
+                  const answered = quizQuestionData.questionsAnswered;
+                  if (answered >= quizQuestionData.questionsTarget) {
+                    active = i === 3;
+                  } else if (answered > 0) {
+                    active = i === 2;
+                  } else if (quizQuestionData.currentQuestion) {
+                    active = i === 1;
+                  }
+                }
+                return (
+                  <li key={label} className={active ? "is-active" : ""}>
+                    {label}
+                  </li>
+                );
+              })}
+            </ol>
+          ) : null}
+          {quizQuestionData?.currentQuestion ? (
+            <p
+              className="lesson-quiz-question"
+              role="status"
+              aria-label={`Quiz question: ${quizQuestionData.currentQuestion}`}
+            >
+              <span className="lesson-quiz-question-label">Quiz question:</span>
+              <span className="lesson-quiz-question-text">
+                “{quizQuestionData.currentQuestion}”
+              </span>
+            </p>
+          ) : (
+            <p className="lesson-speaking-tag lesson-speaking-tag--quiz" role="status">
+              Quiz round — guess fast, max 2 questions per picture!
+            </p>
+          )}
+          {quizQuestionData ? (
+            <p
+              className="lesson-quiz-progress"
+              role="status"
+              aria-label={`${quizQuestionData.questionsAnswered} of ${quizQuestionData.questionsTarget} questions answered`}
+            >
+              <span className="lesson-quiz-progress-label">
+                Questions for {current?.word || "this picture"}:
+              </span>
+              <span className="lesson-quiz-progress-dots" aria-hidden>
+                {Array.from({ length: quizQuestionData.questionsTarget }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={
+                      "lesson-quiz-progress-dot" +
+                      (i < quizQuestionData.questionsAnswered
+                        ? " is-passed"
+                        : i === quizQuestionData.questionsAnswered
+                          ? " is-current"
+                          : "")
+                    }
+                  />
+                ))}
+              </span>
+              <span className="lesson-quiz-progress-count">
+                {quizQuestionData.questionsAnswered}/{quizQuestionData.questionsTarget}
+              </span>
+            </p>
+          ) : null}
         </>
       ) : null}
       <div className="tutor-session-grid">
@@ -459,6 +685,7 @@ export default function LessonPicturePanel({
           {lessonMode === "vocabulary" && current.caption ? (
             <p className="tutor-session-caption">{current.caption}</p>
           ) : null}
+          {quizFeedbackBlock}
           {scoreBlock}
           <p className={`tutor-session-mic-hint ${lessonMode === "speaking" ? "tutor-session-mic-hint--speak" : ""}`}>
             <span className="tutor-session-mic-hint-icon" aria-hidden>

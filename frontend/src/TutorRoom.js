@@ -566,6 +566,8 @@ export default function TutorRoom({
               <span className="tutor-session-header-mode tutor-session-header-mode--speak">Speaking</span>
             ) : mode === "vocabulary" ? (
               <span className="tutor-session-header-mode tutor-session-header-mode--vocab">Vocabulary</span>
+            ) : mode === "quiz" ? (
+              <span className="tutor-session-header-mode tutor-session-header-mode--quiz">Quiz</span>
             ) : null}
           </div>
           <div className="tutor-session-header-meta" aria-hidden>
