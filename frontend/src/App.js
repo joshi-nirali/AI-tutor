@@ -67,13 +67,13 @@ const MODES = [
     emoji: "🎤",
     theme: "speak",
   },
-  {
-    id: "quiz",
-    title: "Quiz mode",
-    hint: "Show off what you've learned!",
-    emoji: "🎯",
-    theme: "quiz",
-  },
+  // {
+  //   id: "quiz",
+  //   title: "Quiz mode",
+  //   hint: "Show off what you've learned!",
+  //   emoji: "🎯",
+  //   theme: "quiz",
+  // },
 ];
 
 const TOKEN_URL =
