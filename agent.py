@@ -1682,6 +1682,25 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning("publish_data failed: %s", e)
 
+    # ── Picture sync delay ──────────────────────────────────────────────
+    # Optional pause (seconds) before the frontend picture card swaps to
+    # the next word.  Gives the tutor's audio time to finish its current
+    # sentence before the visual jumps ahead.  0 = instant (old behavior).
+    _picture_sync_delay_s: float = 0.0
+    _raw_psd = (os.getenv("KID_TUTOR_PICTURE_SYNC_DELAY_S", "") or "").strip()
+    if _raw_psd:
+        try:
+            _picture_sync_delay_s = max(0.0, min(10.0, float(_raw_psd)))
+        except ValueError:
+            logger.warning(
+                "Invalid KID_TUTOR_PICTURE_SYNC_DELAY_S=%r — ignored", _raw_psd
+            )
+    if _picture_sync_delay_s > 0:
+        logger.info(
+            "Picture sync delay: %.2fs before each picture advance",
+            _picture_sync_delay_s,
+        )
+
     async def publish_lesson_picture_index(index: int, reason: str) -> int:
         """Publish at most one forward step per advance; skip duplicate indices."""
         nonlocal last_published_picture_index
@@ -1705,6 +1724,19 @@ async def entrypoint(ctx: JobContext):
                     reason,
                 )
                 clamped = last_published_picture_index + 1
+        # Apply picture sync delay on forward advances (not the initial load).
+        if (
+            _picture_sync_delay_s > 0
+            and last_published_picture_index is not None
+            and clamped > last_published_picture_index
+        ):
+            logger.debug(
+                "picture sync delay %.2fs before advancing to %s (%s)",
+                _picture_sync_delay_s,
+                clamped,
+                reason,
+            )
+            await asyncio.sleep(_picture_sync_delay_s)
         last_published_picture_index = clamped
         await publish_tutor_json(
             {
